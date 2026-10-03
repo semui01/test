@@ -1,0 +1,1155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flux Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: instrument bench. Control rack on the left, live 3D field view in the middle, meters on the right, scope and flux plot underneath. */
+:root{
+  --bg:#e6e9ec; --panel:#f5f6f7; --panel-2:#eceff1; --ink:#1a2027; --muted:#646e79; --faint:#a3abb3; --rule:#d2d7dc;
+  --sel:#235f5a; --sel-ink:#ffffff; --live:#2f8a5b; --warn:#b4741c; --idle:#7b8590;
+  --screen:#0a0d11; --screen-ink:#c5cdd5; --screen-dim:#66717c;
+  --f-ui:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101317; --panel:#171b20; --panel-2:#1d2228; --ink:#e2e6ea; --muted:#8e98a3; --faint:#55606b; --rule:#2a3038;
+    --sel:#3d8f86; --sel-ink:#ffffff; --live:#4cbf83; --warn:#e0a142; --idle:#7b8590; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101317; --panel:#171b20; --panel-2:#1d2228; --ink:#e2e6ea; --muted:#8e98a3; --faint:#55606b; --rule:#2a3038;
+  --sel:#3d8f86; --sel-ink:#ffffff; --live:#4cbf83; --warn:#e0a142; --idle:#7b8590; color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:13px/1.35 var(--f-ui);-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+.app{height:100%;display:grid;gap:10px;padding:12px 16px;
+  grid-template-columns:250px minmax(0,1fr) 296px;
+  grid-template-rows:auto minmax(0,1fr) 214px;
+  grid-template-areas:"top top top" "ctl view met" "ctl bot bot"}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:6px;min-width:0}
+/* header */
+.top{grid-area:top;display:flex;align-items:center;gap:18px;padding:8px 12px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:8px}
+.brand b{font-weight:700;font-size:16px;letter-spacing:-.01em}
+.brand span{color:var(--muted);font-size:11.5px}
+.status{display:flex;align-items:center;gap:8px;flex:1;min-width:220px;font-weight:500}
+.status i{width:8px;height:8px;transform:rotate(45deg);background:var(--idle);flex:none}
+.status[data-k="live"] i{background:var(--live)} .status[data-k="warn"] i{background:var(--warn)}
+.clock{font:11px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+/* controls */
+.controls{grid-area:ctl;overflow:auto;display:flex;flex-direction:column}
+.chead{display:flex;justify-content:space-between;align-items:baseline;padding:9px 12px;border-bottom:1px solid var(--rule)}
+.chead b{font-weight:600} .chead span{color:var(--muted);font-size:11px}
+.sec{padding:10px 12px 12px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:8px}
+.sec:last-child{border-bottom:0}
+.sec h3{margin:0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.seg.three{grid-template-columns:1fr 1fr 1fr}
+.seg button{background:var(--panel-2);border:1px solid transparent;border-radius:4px;padding:6px 8px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:7px}
+.seg button::before{content:"";width:6px;height:6px;transform:rotate(45deg);border:1.2px solid var(--faint);flex:none}
+.seg button.on{background:var(--panel);border-color:var(--ink)}
+.seg button.on::before{background:var(--ink);border-color:var(--ink)}
+.seg button:disabled{opacity:.4;cursor:not-allowed}
+.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.chip{background:var(--panel-2);border:1px solid var(--rule);border-radius:3px;padding:4px 5px 5px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:1px;min-width:0}
+.chip small{font:9.5px var(--f-mono);color:var(--muted);white-space:nowrap}
+.chip b{font-size:15px;font-weight:600;line-height:1.15}
+.chip em{font-style:normal;font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.on{background:var(--chip,var(--sel));border-color:var(--chip,var(--sel));color:var(--sel-ink)}
+.chip.on small,.chip.on em{color:rgba(255,255,255,.78)}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
+.kv b{color:var(--ink);font:500 11.5px var(--f-mono);font-variant-numeric:tabular-nums}
+.sl{display:flex;flex-direction:column;gap:2px}
+.sl .kv span{color:var(--ink)}
+.ruler{position:relative;height:24px}
+.ruler .ticks{position:absolute;left:5px;right:5px;bottom:3px;height:9px;pointer-events:none;
+  background-image:linear-gradient(90deg,var(--faint) 1px,transparent 1px),linear-gradient(90deg,var(--faint) 1px,transparent 1px);
+  background-size:calc((100% - 1px)/4) 9px,calc((100% - 1px)/20) 5px;background-repeat:repeat-x;background-position:left bottom}
+.ruler .base{position:absolute;left:5px;right:5px;bottom:3px;height:1px;background:var(--faint)}
+.ruler .fill{position:absolute;left:5px;bottom:2px;height:3px;background:var(--live);width:var(--p,0%);pointer-events:none;border-radius:1px}
+.ruler input{position:absolute;inset:0;width:100%;height:100%;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
+.ruler input::-webkit-slider-runnable-track{height:24px;background:transparent}
+.ruler input::-moz-range-track{height:24px;background:transparent}
+.ruler input::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:18px;margin-top:1px;background:var(--ink);border-radius:2px 2px 5px 5px;border:0}
+.ruler input::-moz-range-thumb{width:11px;height:18px;background:var(--ink);border-radius:2px 2px 5px 5px;border:0}
+.ruler input:focus-visible{outline:2px solid var(--sel);outline-offset:2px;border-radius:3px}
+.ruler input:disabled{cursor:not-allowed}
+.sl.off{opacity:.4}
+.ends{display:flex;justify-content:space-between;font:9.5px var(--f-mono);color:var(--muted)}
+button:focus-visible{outline:2px solid var(--sel);outline-offset:1px}
+.note{font-size:11.5px;color:var(--muted);margin:0}
+/* view */
+.view{grid-area:view;position:relative;background:var(--screen);border-radius:6px;overflow:hidden;min-height:300px;color:var(--screen-ink);touch-action:none}
+.view canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
+.view canvas.grab{cursor:grabbing}
+.view canvas.over{cursor:move}
+.fig{position:absolute;left:12px;top:10px;font-size:11px;color:var(--screen-dim);pointer-events:none;max-width:55%}
+.fig b{color:var(--screen-ink);font-weight:600;margin-right:6px}
+.vbtns{position:absolute;right:10px;top:8px;display:flex;gap:2px;flex-wrap:wrap;justify-content:flex-end;max-width:60%}
+.vbtns button{background:transparent;border:1px solid transparent;color:var(--screen-dim);font-size:11px;padding:3px 7px;border-radius:3px;cursor:pointer}
+.vbtns button:hover{color:var(--screen-ink)}
+.vbtns button.on{color:var(--screen-ink);border-color:#3a434d}
+.vbtns .gap{width:10px}
+.legend{position:absolute;left:12px;bottom:12px;font:10px var(--f-mono);color:var(--screen-dim);pointer-events:none;width:min(260px,45%)}
+.legend .bar{height:5px;border-radius:1px;margin:4px 0 3px;background:linear-gradient(90deg,#5a3f9c,#3f63b5,#2a8fae,#25ad8a,#73cc55,#f2e33d)}
+.legend .lt{display:flex;justify-content:space-between}
+.hint{position:absolute;right:12px;bottom:10px;font-size:10.5px;color:var(--screen-dim);pointer-events:none;text-align:right}
+/* meters */
+.meters{grid-area:met;overflow:auto;display:flex;flex-direction:column}
+.galvo{padding:8px 12px 4px;border-bottom:1px solid var(--rule)}
+.galvo .t{text-align:center;color:var(--muted);font-size:12px}
+.galvo canvas{width:100%;height:122px;display:block}
+.tiles{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--rule)}
+.tile{padding:8px 11px 9px;min-width:0}
+.tile:nth-child(odd){border-right:1px solid var(--rule)}
+.tile:nth-child(-n+2){border-bottom:1px solid var(--rule)}
+.tile .h{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.tile .h i{width:10px;height:2px;background:var(--c,var(--muted))}
+.tile .v{font:500 22px var(--f-mono);letter-spacing:-.03em;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:2px}
+.tile .v small{font-size:11px;margin-left:3px;letter-spacing:0;color:var(--muted)}
+.tile .s{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-tbl{padding:9px 12px 12px}
+.app-tbl .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.app-tbl .hd b{font-weight:600} .app-tbl .hd span{font-size:11px;color:var(--muted)}
+.app-tbl dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:11.5px}
+.app-tbl dt{color:var(--muted)} .app-tbl dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+/* bottom */
+.bot{grid-area:bot;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:10px;min-height:0}
+.plot{display:flex;flex-direction:column;min-height:0}
+.plot .hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 11px;font-size:11.5px}
+.plot .hd b{font-weight:600;margin-right:4px}
+.plot .hd span{color:var(--muted);font-size:10.5px;text-align:right}
+.plot .cv{position:relative;flex:1;min-height:150px}
+.plot canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+@media (max-width:1100px){
+  .app{grid-template-columns:230px minmax(0,1fr) 270px}
+}
+@media (max-width:980px){
+  html,body{height:auto}
+  .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:none;
+    grid-template-areas:"top" "view" "met" "ctl" "bot"}
+  .view{height:62vh;min-height:340px}
+  .controls,.meters{overflow:visible}
+  .bot{grid-template-columns:minmax(0,1fr)}
+  .plot .cv{min-height:190px}
+  .tiles .tile .v{font-size:20px}
+}
+@media (max-width:480px){
+  .vbtns{max-width:100%;left:8px;right:8px;top:44px;justify-content:flex-start}
+  .fig{max-width:90%}
+  .hint{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top panel">
+    <div class="brand"><b>Flux bench</b><span>magnet, coil and field, solved live</span></div>
+    <div class="status" id="status" data-k="idle" role="status" aria-live="polite"><i></i><span id="statusText">Starting…</span></div>
+    <div class="clock" id="clock">t 0.0 s</div>
+  </header>
+
+  <aside class="controls panel" aria-label="Controls">
+    <div class="chead"><b>Controls</b><span>drag the magnet in the view</span></div>
+    <div class="sec">
+      <h3>Experiment</h3>
+      <div class="seg" id="expSeg"><button data-v="coil" id="expCoil">Coil bench</button><button data-v="drop" id="expDrop">Tube drop</button></div>
+      <p class="note" id="expNote"></p>
+    </div>
+    <div class="sec">
+      <h3>Magnet material</h3>
+      <div class="chips" id="magChips"></div>
+      <div class="kv"><span id="magName"></span><b id="magBr"></b></div>
+    </div>
+    <div class="sec" id="motionSec">
+      <h3>Magnet motion</h3>
+      <div class="seg three" id="motionSeg"><button data-v="hold" id="motHold">Hold</button><button data-v="swing" id="motSwing">Swing</button><button data-v="slide" id="motSlide">Slide</button></div>
+      <div class="seg" id="flipSeg"><button id="flipBtn" aria-pressed="false">Flip poles</button><button id="resetBtn">Reset</button></div>
+      <div class="sl" id="swingSl">
+        <div class="kv"><span>Swing speed (peak)</span><b id="swingOut"></b></div>
+        <div class="ruler"><div class="base"></div><div class="ticks"></div><div class="fill"></div><input type="range" id="swing" min="0.05" max="1" step="0.01" aria-label="Swing speed"></div>
+        <div class="ends"><span>0.05</span><span>1 m/s</span></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h3>Coil wire</h3>
+      <div class="chips" id="wireChips"></div>
+      <div class="kv"><span id="wireName"></span><b id="wireR"></b></div>
+      <div class="sl">
+        <div class="kv"><span>Turns</span><b id="turnsOut"></b></div>
+        <div class="ruler"><div class="base"></div><div class="ticks"></div><div class="fill"></div><input type="range" id="turns" min="50" max="800" step="10" aria-label="Turns"></div>
+        <div class="ends"><span>50</span><span>800</span></div>
+      </div>
+      <div class="sl" id="angleSl">
+        <div class="kv"><span>Coil angle</span><b id="angleOut"></b></div>
+        <div class="ruler"><div class="base"></div><div class="ticks"></div><div class="fill"></div><input type="range" id="angle" min="0" max="180" step="1" aria-label="Coil angle"></div>
+        <div class="ends"><span>0°</span><span>90°</span><span>180°</span></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h3>Core</h3>
+      <div class="seg" id="coreSeg"><button data-v="air" id="coreAir">Air</button><button data-v="iron" id="coreIron">Soft iron</button></div>
+    </div>
+    <div class="sec">
+      <h3>Battery</h3>
+      <div class="sl">
+        <div class="kv"><span>Voltage</span><b id="voltOut"></b></div>
+        <div class="ruler"><div class="base"></div><div class="ticks"></div><div class="fill"></div><input type="range" id="volts" min="-12" max="12" step="0.5" aria-label="Battery voltage"></div>
+        <div class="ends"><span>−12</span><span>0</span><span>+12 V</span></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h3>Time</h3>
+      <div class="seg" id="timeSeg"><button data-v="1" id="t1">Real time</button><button data-v="0.2" id="t5">Slow, 1/5</button></div>
+    </div>
+  </aside>
+
+  <section class="view" id="viewBox" aria-label="3D field view">
+    <canvas id="view"></canvas>
+    <div class="fig"><b>Fig. 1</b><span id="figText">Field of the magnet and coil, horizontal plane through the axis</span></div>
+    <div class="vbtns" id="vbtns">
+      <button data-view="angled" class="on">Angled</button><button data-view="side">Side</button><button data-view="top">Top</button><button data-view="axis">Along axis</button>
+      <span class="gap"></span>
+      <button data-lines="plane" class="on">Plane</button><button data-lines="3d">3D</button>
+    </div>
+    <div class="legend"><div>|B| field strength, log scale</div><div class="bar"></div><div class="lt"><span>1 mT</span><span>10 mT</span><span>100 mT</span><span>1 T</span></div></div>
+    <div class="hint">drag magnet to move · drag space to orbit · scroll to zoom</div>
+  </section>
+
+  <aside class="meters panel" aria-label="Meters">
+    <div class="galvo"><div class="t">Galvanometer, coil current <span id="galvoRange"></span></div><canvas id="galvo"></canvas></div>
+    <div class="tiles">
+      <div class="tile" style="--c:#2fb36b"><div class="h"><i></i>Induced EMF</div><div class="v" id="vEmf">0<small>V</small></div><div class="s" id="sEmf"></div></div>
+      <div class="tile" style="--c:#e8743b"><div class="h"><i></i>Current</div><div class="v" id="vI">0<small>A</small></div><div class="s" id="sI"></div></div>
+      <div class="tile"><div class="h">Coil field, center</div><div class="v" id="vB">0<small>T</small></div><div class="s" id="sB"></div></div>
+      <div class="tile"><div class="h">Force on magnet</div><div class="v" id="vF">0<small>N</small></div><div class="s" id="sF"></div></div>
+    </div>
+    <div class="app-tbl">
+      <div class="hd"><b>Apparatus</b><span>as modeled</span></div>
+      <dl id="appList"></dl>
+    </div>
+  </aside>
+
+  <div class="bot">
+    <section class="plot panel"><div class="hd"><div><b>Fig. 2</b>Oscilloscope</div><span id="scopeLbl">CH1 induced EMF, CH2 induced current</span></div><div class="cv"><canvas id="scope"></canvas></div></section>
+    <section class="plot panel"><div class="hd"><div><b>Fig. 3</b>Flux linkage Λ against magnet position</div><span>EMF = −slope × speed</span></div><div class="cv"><canvas id="flux"></canvas></div></section>
+  </div>
+</div>
+
+<script id="physics">
+/* ---------- physics: DOM free ---------- */
+var MU0 = 4e-7 * Math.PI, G = 9.81;
+var MAG_R = 0.006, MAG_L = 0.025, MAG_A = Math.PI * MAG_R * MAG_R, MAG_V = MAG_A * MAG_L;
+var BORE = 0.015, COIL_LEN = 0.012, WIRE_D = 0.0005, METER_R = 1, CORE_K = 6;
+var MU_S = 0.12, MU_K = 0.08, SWING_A = 0.11;
+var MAGNETS = {
+  N52: { Br: 1.44, name: 'Sintered NdFeB, N52', kind: 'NdFeB', rho: 7500, color: '#4b5a6e' },
+  N42: { Br: 1.30, name: 'Sintered NdFeB, N42', kind: 'NdFeB', rho: 7500, color: '#4f6b80' },
+  SmCo: { Br: 1.10, name: 'Samarium cobalt, Sm₂Co₁₇', kind: 'Sm₂Co₁₇', rho: 8400, color: '#6a5a7d' },
+  C8: { Br: 0.39, name: 'Strontium ferrite, C8', kind: 'Ferrite', rho: 4900, color: '#235f5a' }
+};
+var WIRES = {
+  Cu: { rho: 16.8e-9, name: 'Copper', color: '#a65a2c', tint: [196, 112, 62] },
+  Ag: { rho: 15.9e-9, name: 'Silver', color: '#5f6d7b', tint: [196, 202, 210] },
+  Al: { rho: 26.5e-9, name: 'Aluminium', color: '#6c7884', tint: [168, 176, 186] },
+  NiCr: { rho: 1100e-9, name: 'Nichrome', color: '#5c6249', tint: [138, 140, 120] }
+};
+var S = {
+  exp: 'coil', mat: 'C8', motion: 'swing', flip: false, swingV: 0.2, wire: 'Al', turns: 400, angle: 0,
+  core: 'air', volts: 0, timeScale: 1, lines: 'plane',
+  t: 0, pos: { x: SWING_A * 0.9, y: 0, z: 0 }, vx: 0, vz: 0, phase: 0, I: 0, lam: 0, emf: 0,
+  Fx: 0, Fz: 0, dLdx: 0, dLdz: 0, resync: true, pause: 0, dragging: false, target: null
+};
+var D = null;
+
+function derive() {
+  var m = MAGNETS[S.mat], w = WIRES[S.wire], N = S.turns;
+  var perLayer = Math.floor(COIL_LEN / WIRE_D), layers = Math.ceil(N / perLayer);
+  var depth = layers * WIRE_D, ro = BORE + depth, rm = BORE + depth / 2;
+  var len = 0, left = N;
+  for (var i = 0; i < layers; i++) { var n = Math.min(perLayer, left); left -= n; len += n * 2 * Math.PI * (BORE + (i + 0.5) * WIRE_D); }
+  var Rc = w.rho * len / (Math.PI * WIRE_D * WIRE_D / 4), Rt = Rc + METER_R;
+  var core = (S.core === 'iron' && S.exp === 'coil') ? CORE_K : 1;
+  var L = 31.6e-6 * rm * rm * N * N / (6 * rm + 9 * COIL_LEN + 10 * depth) * core;
+  var th = (S.exp === 'drop' ? 0 : S.angle) * Math.PI / 180;
+  var loops = [];
+  [-1 / 3, 0, 1 / 3].forEach(function (fa) { [0.25, 0.75].forEach(function (fr) { loops.push({ a: BORE + fr * depth, z: fa * COIL_LEN, n: N / 6 }); }); });
+  D = { Br: m.Br, mom: m.Br * MAG_V / MU0, mass: m.rho * MAG_V, N: N, perLayer: perLayer, layers: layers, depth: depth, ro: ro, rm: rm,
+    len: len, Rc: Rc, Rt: Rt, L: L, tau: L / Rt, core: core, nx: Math.cos(th), nz: Math.sin(th), loops: loops, sgn: S.flip ? -1 : 1 };
+  S.resync = true;
+}
+
+/* complete elliptic integrals K(m), E(m) via the arithmetic-geometric mean */
+var EK = 0, EE = 0;
+function ellipKE(m) {
+  if (m > 0.999999) m = 0.999999;
+  var a = 1, b = Math.sqrt(1 - m), c = Math.sqrt(m), s = 0.5 * c * c, p = 1;
+  for (var i = 0; i < 14 && Math.abs(c) > 1e-10; i++) {
+    var an = (a + b) / 2; c = (a - b) / 2; b = Math.sqrt(a * b); a = an; p *= 2; s += 0.5 * p * c * c;
+  }
+  EK = Math.PI / (2 * a); EE = EK * (1 - s);
+}
+/* field of a single circular loop, radius a, 1 A, at cylindrical (rho, z) */
+var LBz = 0, LBr = 0, EPS2 = 2.5e-7;
+function loopB(a, rho, z) {
+  var C = MU0 / (2 * Math.PI);
+  var ap = (a + rho) * (a + rho) + z * z, am = (a - rho) * (a - rho) + z * z + EPS2;
+  if (rho < 1e-4 * a) {
+    var q = a * a + z * z;
+    LBz = MU0 * a * a / (2 * q * Math.sqrt(q));
+    LBr = 0.75 * MU0 * a * a * z * rho / (q * q * Math.sqrt(q));
+    return;
+  }
+  ellipKE(4 * a * rho / (ap + EPS2));
+  var sq = Math.sqrt(ap);
+  LBz = C / sq * (EK + (a * a - rho * rho - z * z) / am * EE);
+  LBr = C * z / (rho * sq) * (-EK + (a * a + rho * rho + z * z) / am * EE);
+}
+/* coil field per amp (before core factor) at a world point */
+var CBx = 0, CBy = 0, CBz = 0;
+function coilUnit(px, py, pz) {
+  var nx = D.nx, nz = D.nz, ax = px * nx + pz * nz;
+  var rx = px - ax * nx, ry = py, rz = pz - ax * nz;
+  var rho = Math.sqrt(rx * rx + ry * ry + rz * rz), bz = 0, br = 0;
+  for (var i = 0; i < D.loops.length; i++) { var l = D.loops[i]; loopB(l.a, rho, ax - l.z); bz += l.n * LBz; br += l.n * LBr; }
+  if (rho > 1e-9) br /= rho; else br = 0;
+  CBx = bz * nx + br * rx; CBy = br * ry; CBz = bz * nz + br * rz;
+}
+/* flux linkage of the magnet through the coil, by reciprocity: Λ = Σ m_i · B_coil(1 A)(r_i), magnet cut into 5 dipole slices */
+function lambdaAt(px, py, pz) {
+  var s = 0, ns = 5;
+  for (var i = 0; i < ns; i++) { coilUnit(px - MAG_L / 2 + MAG_L * (i + 0.5) / ns, py, pz); s += CBx; }
+  return s * D.mom / ns * D.sgn * D.core;
+}
+/* magnet field: magnetic surface charge on both faces, plus M inside the body */
+var FACE = [[0, 0]];
+for (var k = 0; k < 6; k++) FACE.push([0.62 * MAG_R * Math.cos(k * Math.PI / 3), 0.62 * MAG_R * Math.sin(k * Math.PI / 3)]);
+var MBx = 0, MBy = 0, MBz = 0;
+function magField(px, py, pz) {
+  var c = S.pos, s = D.sgn, K = D.Br * MAG_A / (4 * Math.PI) / FACE.length, bx = 0, by = 0, bz = 0;
+  for (var side = 1; side >= -1; side -= 2) {
+    var fx = c.x + side * s * MAG_L / 2, q = side * K;
+    for (var j = 0; j < FACE.length; j++) {
+      var dx = px - fx, dy = py - (c.y + FACE[j][0]), dz = pz - (c.z + FACE[j][1]);
+      var r2 = dx * dx + dy * dy + dz * dz + 4e-6 * 4e-6, inv = q / (r2 * Math.sqrt(r2));
+      bx += dx * inv; by += dy * inv; bz += dz * inv;
+    }
+  }
+  var ex = px - c.x, ey = py - c.y, ez = pz - c.z;
+  if (Math.abs(ex) < MAG_L / 2 && ey * ey + ez * ez < MAG_R * MAG_R) bx += D.Br * s;
+  MBx = bx; MBy = by; MBz = bz;
+}
+var vizCoil = 0, FBx = 0, FBy = 0, FBz = 0;
+function field(px, py, pz) {
+  magField(px, py, pz); FBx = MBx; FBy = MBy; FBz = MBz;
+  if (vizCoil !== 0) { coilUnit(px, py, pz); FBx += vizCoil * CBx; FBy += vizCoil * CBy; FBz += vizCoil * CBz; }
+}
+function gradLambda() {
+  var p = S.pos, d = 4e-4;
+  S.dLdx = (lambdaAt(p.x + d, p.y, p.z) - lambdaAt(p.x - d, p.y, p.z)) / (2 * d);
+  S.dLdz = S.exp === 'coil' ? (lambdaAt(p.x, p.y, p.z + d) - lambdaAt(p.x, p.y, p.z - d)) / (2 * d) : 0;
+  S.Fx = S.I * S.dLdx; S.Fz = S.I * S.dLdz;
+}
+
+/* one integration step of length h seconds */
+var onSample = null, sampleAcc = 0;
+function substep(h) {
+  var p = S.pos, x0 = p.x, z0 = p.z;
+  if (S.dragging && S.target) {
+    var k = 1 - Math.exp(-h / 0.025);
+    p.x += (S.target.x - p.x) * k; p.z += (S.target.z - p.z) * k;
+  } else if (S.exp === 'drop') {
+    if (S.pause > 0) {
+      S.pause -= h;
+      if (S.pause <= 0 && p.x < 0) { p.x = 0.14; S.vx = 0; S.resync = true; S.pause = 0.35; }
+    } else {
+      var dLdx = (lambdaAt(p.x + 4e-4, 0, 0) - lambdaAt(p.x - 4e-4, 0, 0)) / 8e-4;
+      S.dLdx = dLdx; S.Fx = S.I * dLdx;
+      S.vx += (-G + S.Fx / D.mass) * h; p.x += S.vx * h;
+      if (p.x < -0.17) { p.x = -0.17; S.vx = 0; S.pause = 0.9; }
+      if (p.x > 0.19) { p.x = 0.19; S.vx = 0; }
+    }
+  } else if (S.motion === 'swing') {
+    var w = S.swingV / SWING_A; S.phase += w * h; p.x = SWING_A * Math.sin(S.phase);
+  } else if (S.motion === 'slide') {
+    var dl = (lambdaAt(p.x + 4e-4, p.y, p.z) - lambdaAt(p.x - 4e-4, p.y, p.z)) / 8e-4;
+    S.dLdx = dl; S.Fx = S.I * dl;
+    var fr = D.mass * G, v = S.vx;
+    if (Math.abs(v) < 1e-4 && Math.abs(S.Fx) < MU_S * fr) { v = 0; }
+    else {
+      var a = S.Fx / D.mass - Math.sign(v || S.Fx) * MU_K * G, nv = v + a * h;
+      v = (v !== 0 && Math.sign(nv) !== Math.sign(v) && Math.abs(S.Fx) < MU_S * fr) ? 0 : nv;
+    }
+    p.x += v * h;
+    if (p.x > 0.19) { p.x = 0.19; v = -0.3 * v; } if (p.x < -0.19) { p.x = -0.19; v = -0.3 * v; }
+    S.vx = v;
+  }
+  if (!(S.exp === 'drop' && !S.dragging) && !(S.motion === 'slide' && !S.dragging)) S.vx = (p.x - x0) / h;
+  S.vz = (p.z - z0) / h;
+  var lam = lambdaAt(p.x, p.y, p.z);
+  if (S.resync) { S.lam = lam; S.resync = false; }
+  S.emf = -(lam - S.lam) / h; S.lam = lam;
+  var Iinf = (S.volts + S.emf) / D.Rt, decay = Math.exp(-h / D.tau);
+  S.I = Iinf + (S.I - Iinf) * decay;
+  S.t += h;
+  sampleAcc += h;
+  if (sampleAcc >= 0.004) { sampleAcc -= 0.004; if (onSample) onSample(S.emf, S.I - S.volts / D.Rt); }
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- formatting ---------- */
+  function si(v, unit, dig) {
+    var a = Math.abs(v);
+    if (!isFinite(v) || a < 1e-12) return ['0', unit];
+    var P = [[1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'μ'], [1e-9, 'n']];
+    for (var i = 0; i < P.length; i++) {
+      if (a >= P[i][0] * 0.9995 || i === P.length - 1) {
+        var x = v / P[i][0], ax = Math.abs(x);
+        var s = ax >= 99.95 ? x.toFixed(0) : ax >= 9.995 ? x.toFixed(1) : x.toFixed(dig == null ? 2 : dig);
+        return [s.replace('-', '−'), P[i][1] + unit];
+      }
+    }
+  }
+  function sis(v, unit) { var r = si(v, unit); return r[0] + ' ' + r[1]; }
+  function setV(el, v, unit) { var r = si(v, unit); el.innerHTML = r[0] + '<small>' + r[1] + '</small>'; }
+
+  /* ---------- controls ---------- */
+  function seg(id, key, onChange) {
+    var box = document.getElementById(id);
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b || b.disabled || !b.dataset.v) return;
+      S[key] = key === 'timeScale' ? parseFloat(b.dataset.v) : b.dataset.v;
+      sync(); if (onChange) onChange();
+    });
+  }
+  function chips(id, table, key, sub) {
+    var box = document.getElementById(id);
+    Object.keys(table).forEach(function (k) {
+      var t = table[k], b = document.createElement('button');
+      b.className = 'chip'; b.dataset.k = k; b.style.setProperty('--chip', t.color);
+      b.innerHTML = '<small>' + sub(t) + '</small><b>' + k + '</b><em>' + (t.kind || t.name) + '</em>';
+      b.setAttribute('aria-label', t.name);
+      box.appendChild(b);
+    });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return; S[key] = b.dataset.k; derive(); sync();
+    });
+  }
+  chips('magChips', MAGNETS, 'mat', function (t) { return t.Br.toFixed(2) + ' T'; });
+  chips('wireChips', WIRES, 'wire', function (t) { return (t.rho * 1e9).toFixed(1) + ' nΩm'; });
+  seg('expSeg', 'exp', function () {
+    if (S.exp === 'drop') { S.pos.x = 0.14; S.pos.z = 0; S.vx = 0; S.pause = 0.4; setView(viewName, true); }
+    else { S.pos.x = SWING_A * 0.9; S.phase = Math.asin(0.9); S.vx = 0; setView(viewName, true); }
+    derive(); sync(); linesDirty = true; fluxKey = '';
+  });
+  seg('motionSeg', 'motion', function () {
+    if (S.motion === 'swing') S.phase = Math.asin(Math.max(-1, Math.min(1, S.pos.x / SWING_A)));
+    S.vx = 0;
+  });
+  seg('coreSeg', 'core', function () { derive(); sync(); });
+  seg('timeSeg', 'timeScale');
+  $('#flipBtn').addEventListener('click', function () { S.flip = !S.flip; derive(); sync(); });
+  $('#resetBtn').addEventListener('click', reset);
+
+  function slider(id, key, fmt, after) {
+    var el = document.getElementById(id);
+    el.value = S[key];
+    el.addEventListener('input', function () { S[key] = parseFloat(el.value); if (after) after(); sync(); });
+  }
+  slider('swing', 'swingV');
+  slider('turns', 'turns', null, derive);
+  slider('angle', 'angle', null, derive);
+  slider('volts', 'volts');
+
+  function setFill(id) {
+    var el = document.getElementById(id), p = (el.value - el.min) / (el.max - el.min) * 100;
+    el.parentNode.style.setProperty('--p', 'calc((100% - 10px) * ' + (p / 100) + ')');
+  }
+  function on(sel, cond) { var b = $(sel); b.classList.toggle('on', !!cond); b.setAttribute('aria-pressed', cond ? 'true' : 'false'); }
+
+  function sync() {
+    var m = MAGNETS[S.mat], w = WIRES[S.wire], drop = S.exp === 'drop';
+    on('#expCoil', !drop); on('#expDrop', drop);
+    on('#motHold', S.motion === 'hold'); on('#motSwing', S.motion === 'swing'); on('#motSlide', S.motion === 'slide');
+    on('#coreAir', D.core === 1); on('#coreIron', D.core !== 1);
+    on('#t1', S.timeScale === 1); on('#t5', S.timeScale !== 1);
+    on('#flipBtn', S.flip);
+    $('#coreIron').disabled = drop;
+    $('#motionSeg').querySelectorAll('button').forEach(function (b) { b.disabled = drop; });
+    $('#swingSl').classList.toggle('off', drop || S.motion !== 'swing'); $('#swing').disabled = drop || S.motion !== 'swing';
+    $('#angleSl').classList.toggle('off', drop); $('#angle').disabled = drop;
+    $('#expNote').textContent = drop
+      ? 'The magnet falls down a tube through the coil. Its own induced current brakes it. The bore is occupied, so the iron core is off.'
+      : 'Magnet on a bench beside a coil. Swing it, slide it under magnetic force, or drag it yourself.';
+    document.querySelectorAll('#magChips .chip').forEach(function (b) { b.classList.toggle('on', b.dataset.k === S.mat); });
+    document.querySelectorAll('#wireChips .chip').forEach(function (b) { b.classList.toggle('on', b.dataset.k === S.wire); });
+    $('#magName').textContent = m.name; $('#magBr').textContent = 'Bᵣ ' + m.Br.toFixed(2) + ' T';
+    $('#wireName').textContent = w.name + ' wire, ' + (WIRE_D * 1000).toFixed(1) + ' mm';
+    $('#wireR').textContent = 'R ' + sis(D.Rc, 'Ω');
+    $('#swingOut').textContent = S.swingV.toFixed(2) + ' m/s';
+    $('#turnsOut').textContent = S.turns;
+    $('#angleOut').textContent = (drop ? 0 : S.angle) + '°';
+    $('#voltOut').textContent = (S.volts > 0 ? '+' : S.volts < 0 ? '−' : '') + Math.abs(S.volts).toFixed(1) + ' V';
+    ['swing', 'turns', 'angle', 'volts'].forEach(setFill);
+    var core = D.core !== 1 ? 'soft iron, μ_eff ≈ ' + CORE_K : 'air';
+    var rows = [
+      ['Magnet', 'Ø' + MAG_R * 2000 + ' × ' + MAG_L * 1000 + ' mm, ' + (D.mass * 1000).toFixed(1) + ' g'],
+      ['Remanence', m.Br.toFixed(2) + ' T'],
+      ['Dipole moment', D.mom.toFixed(2) + ' A·m²'],
+      ['Coil', 'Ø' + BORE * 2000 + ' bore, ' + D.N + ' t, ' + D.layers + ' layers'],
+      ['Wire', S.wire + ', Ø' + WIRE_D * 1000 + ' mm, ' + D.len.toFixed(1) + ' m'],
+      ['Resistance', sis(D.Rc, 'Ω') + ' + ' + METER_R + ' Ω meter'],
+      ['Inductance', sis(D.L, 'H') + ' (Wheeler)'],
+      ['Time constant', sis(D.tau, 's')],
+      ['Core', core]
+    ];
+    $('#appList').innerHTML = rows.map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('');
+    $('#figText').textContent = S.lines === 'plane'
+      ? (drop ? 'Field of the magnet and coil, vertical plane through the tube' : 'Field of the magnet and coil, horizontal plane through the axis')
+      : 'Field lines seeded all around the magnet, in 3D';
+    document.querySelectorAll('[data-lines]').forEach(function (b) { b.classList.toggle('on', b.dataset.lines === S.lines); });
+    linesDirty = true;
+  }
+
+  function reset() {
+    S.t = 0; S.I = 0; S.vx = 0; S.vz = 0; S.pos.z = 0; S.resync = true;
+    if (S.exp === 'drop') { S.pos.x = 0.14; S.pause = 0.4; } else { S.pos.x = SWING_A * 0.9; S.phase = Math.asin(0.9); }
+    scopeBuf.fill(0); scopeHead = 0; peakI = 0;
+  }
+
+  /* ---------- scope buffer ---------- */
+  var SCOPE_N = 1250, scopeBuf = new Float32Array(SCOPE_N * 2), scopeHead = 0;
+  onSample = function (emf, iind) { scopeBuf[scopeHead * 2] = emf; scopeBuf[scopeHead * 2 + 1] = iind; scopeHead = (scopeHead + 1) % SCOPE_N; };
+
+  /* ---------- canvases ---------- */
+  var DPR = 1;
+  function fitCanvas(c) {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    var r = c.getBoundingClientRect(), w = Math.max(1, Math.round(r.width * DPR)), h = Math.max(1, Math.round(r.height * DPR));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    var ctx = c.getContext('2d'); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    return { ctx: ctx, w: r.width, h: r.height };
+  }
+  var tokens = {}, tokenAt = 0;
+  function tok(now) {
+    if (now - tokenAt > 500) {
+      var cs = getComputedStyle(document.documentElement);
+      ['--ink', '--muted', '--faint', '--rule', '--panel', '--live'].forEach(function (k) { tokens[k] = cs.getPropertyValue(k).trim(); });
+      tokenAt = now;
+    }
+    return tokens;
+  }
+
+  /* ---------- colour map for |B| ---------- */
+  var STOPS = [[90, 63, 156], [63, 99, 181], [42, 143, 174], [37, 173, 138], [115, 204, 85], [242, 227, 61]];
+  var NB = 18, BUCKET = [];
+  for (var i = 0; i < NB; i++) {
+    var t = i / (NB - 1) * (STOPS.length - 1), j = Math.min(STOPS.length - 2, Math.floor(t)), f = t - j;
+    var c = STOPS[j].map(function (v, k) { return Math.round(v + (STOPS[j + 1][k] - v) * f); });
+    BUCKET.push('rgb(' + c.join(',') + ')');
+  }
+  function bucketOf(B) { var t = (Math.log10(Math.max(B, 1e-6)) + 3) / 3; return Math.max(0, Math.min(NB - 1, Math.round(t * (NB - 1)))); }
+
+  /* ---------- field lines ---------- */
+  var lines = [], linesDirty = true, linesAt = 0, linesCost = 5, linesSig = '';
+  function insideMag(x, y, z) { var dx = x - S.pos.x, dy = y - S.pos.y, dz = z - S.pos.z; return Math.abs(dx) < MAG_L / 2 && dy * dy + dz * dz < MAG_R * MAG_R; }
+  function stepLen(x, y, z) {
+    var dx = Math.max(0, Math.abs(x - S.pos.x) - MAG_L / 2), dr = Math.max(0, Math.hypot(y - S.pos.y, z - S.pos.z) - MAG_R);
+    var dm = Math.hypot(dx, dr);
+    var ax = x * D.nx + z * D.nz, rx = x - ax * D.nx, rz = z - ax * D.nz, rho = Math.hypot(rx, y, rz);
+    var dc = vizCoil ? Math.hypot(Math.max(0, Math.abs(rho - D.rm) - D.depth / 2), Math.max(0, Math.abs(ax) - COIL_LEN / 2)) : 1;
+    return Math.max(0.0007, Math.min(0.009, 0.13 * Math.min(dm + 0.002, dc + 0.002)));
+  }
+  function trace(x, y, z, dir, closed) {
+    var P = [x, y, z], Bm = [], len = 0, sx = x, sy = y, sz = z;
+    field(x, y, z); Bm.push(Math.hypot(FBx, FBy, FBz));
+    for (var n = 0; n < 700; n++) {
+      var h = stepLen(x, y, z);
+      field(x, y, z); var b = Math.hypot(FBx, FBy, FBz); if (b < 3e-6) break;
+      var mx = x + dir * 0.5 * h * FBx / b, my = y + dir * 0.5 * h * FBy / b, mz = z + dir * 0.5 * h * FBz / b;
+      field(mx, my, mz); b = Math.hypot(FBx, FBy, FBz); if (b < 3e-6) break;
+      x += dir * h * FBx / b; y += dir * h * FBy / b; z += dir * h * FBz / b; len += h;
+      P.push(x, y, z); Bm.push(b);
+      if (Math.abs(x) > 0.3 || Math.abs(y) > 0.3 || Math.abs(z) > 0.3 || len > 1.4) break;
+      if (insideMag(x, y, z)) break;
+      if (closed && len > 0.03 && Math.hypot(x - sx, y - sy, z - sz) < 1.6 * h) { P.push(sx, sy, sz); Bm.push(Bm[0]); break; }
+    }
+    return { P: P, B: Bm };
+  }
+  function pack(P, B) {
+    var n = B.length, cum = new Float32Array(n);
+    for (var i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(P[i * 3] - P[i * 3 - 3], P[i * 3 + 1] - P[i * 3 - 2], P[i * 3 + 2] - P[i * 3 - 1]);
+    return { P: new Float32Array(P), B: new Float32Array(B), cum: cum, n: n };
+  }
+  function computeLines() {
+    var t0 = performance.now(), out = [];
+    var plane = S.lines === 'plane';
+    var phis = plane ? [Math.PI / 2, -Math.PI / 2] : [0, 1, 2, 3, 4, 5, 6, 7].map(function (k) { return (k + 0.5) * Math.PI / 4; });
+    var per = plane ? 13 : 5;
+    var c = S.pos, s = D.sgn, d = 0.0016, hl = MAG_L / 2 + d, rr = MAG_R + d, per2 = rr + 2 * hl + rr;
+    phis.forEach(function (phi) {
+      var ey = Math.cos(phi), ez = Math.sin(phi), M = 80, smp = [], tot = 0;
+      for (var i = 0; i < M; i++) {
+        var u = (i + 0.5) / M * per2, a, r, na, nr;
+        if (u < rr) { a = hl; r = u; na = 1; nr = 0; }
+        else if (u < rr + 2 * hl) { a = hl - (u - rr); r = rr; na = 0; nr = 1; }
+        else { a = -hl; r = rr - (u - rr - 2 * hl); na = -1; nr = 0; }
+        var px = c.x + a * s, py = c.y + r * ey, pz = c.z + r * ez;
+        field(px, py, pz);
+        var fl = FBx * na * s + (FBy * ey + FBz * ez) * nr, wgt = Math.max(0, fl) * (0.002 + r) * (per2 / M);
+        tot += wgt; smp.push([px, py, pz, tot]);
+      }
+      if (tot <= 0) return;
+      var j = 0;
+      for (var q = 0; q < per; q++) {
+        var target = (q + 0.5) / per * tot;
+        while (j < M - 1 && smp[j][3] < target) j++;
+        var tr = trace(smp[j][0], smp[j][1], smp[j][2], 1, false);
+        if (tr.B.length > 2) out.push(pack(tr.P, tr.B));
+      }
+    });
+    /* lines threading the coil when it carries real current */
+    if (vizCoil) {
+      coilUnit(0, 0, 0); var bc = Math.abs(vizCoil * CBx * D.nx + vizCoil * CBz * D.nz);
+      magField(0, 0, 0); var bm = Math.hypot(MBx, MBy, MBz);
+      var share = bc / (bc + bm + 1e-12), ncs = Math.round(1 + 3 * share);
+      if (bc > 1e-4) {
+        var wx = -D.nz, wz = D.nx;
+        var azis = plane ? [[wx, 0, wz]] : [[wx, 0, wz], [0, 1, 0], [wx * 0.7071, 0.7071, wz * 0.7071], [-wx * 0.7071, 0.7071, -wz * 0.7071]];
+        azis.forEach(function (e) {
+          for (var q = -ncs; q <= ncs; q++) {
+            if (q === 0) continue;
+            var rr2 = (q / (ncs + 0.5)) * BORE * 0.9, sx = e[0] * rr2, sy = e[1] * rr2, sz = e[2] * rr2;
+            if (!plane && q < 0) continue;
+            var f = trace(sx, sy, sz, 1, true), b = trace(sx, sy, sz, -1, true);
+            var P = [], B = [];
+            for (var i = b.B.length - 1; i >= 1; i--) { P.push(b.P[i * 3], b.P[i * 3 + 1], b.P[i * 3 + 2]); B.push(b.B[i]); }
+            for (i = 0; i < f.B.length; i++) { P.push(f.P[i * 3], f.P[i * 3 + 1], f.P[i * 3 + 2]); B.push(f.B[i]); }
+            if (B.length > 2) out.push(pack(P, B));
+          }
+        });
+      }
+    }
+    lines = out;
+    linesCost = performance.now() - t0;
+  }
+
+  /* ---------- camera ---------- */
+  var VIEWS = { angled: [-0.62, 0.42, 0.38], side: [0, 0.03, 0.38], top: [0, 1.45, 0.4], axis: [-1.45, 0.18, 0.36] };
+  var VIEWS_DROP = { angled: [-0.6, 0.3, 0.6], side: [0, 0.02, 0.6], top: [0, 1.45, 0.5], axis: [0, 1.45, 0.5] };
+  var cam = { yaw: -0.62, pitch: 0.42, dist: 0.5, goal: null }, viewName = 'angled';
+  function setView(name, snap) {
+    viewName = name;
+    var v = (S.exp === 'drop' ? VIEWS_DROP : VIEWS)[name];
+    cam.goal = { yaw: v[0], pitch: v[1], dist: v[2] };
+    if (snap || reduceMotion) { cam.yaw = v[0]; cam.pitch = v[1]; cam.dist = v[2]; cam.goal = null; }
+    document.querySelectorAll('[data-view]').forEach(function (b) { b.classList.toggle('on', b.dataset.view === name); });
+  }
+  var E = [0, 0, 0], F = [0, 0, 0], R = [0, 0, 0], U = [0, 0, 0], focal = 600, CX = 0, CY = 0, TGT = [0, 0, 0];
+  function updateBasis(w, h) {
+    var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch), cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    TGT = S.exp === 'drop' ? [0, 0.0, 0] : [0.01, 0, 0];
+    E = [TGT[0] + cam.dist * cp * sy, TGT[1] + cam.dist * sp, TGT[2] + cam.dist * cp * cy];
+    F = [-cp * sy, -sp, -cp * cy]; R = [cy, 0, -sy]; U = [-sy * sp, cp, -cy * sp];
+    focal = Math.min(w * 1.05, h * 1.5); CX = w / 2; CY = h * 0.52;
+  }
+  /* physics coords to render coords: in the drop experiment the coil axis points up */
+  function toR(x, y, z, o) { if (S.exp === 'drop') { o[0] = -y; o[1] = x; o[2] = z; } else { o[0] = x; o[1] = y; o[2] = z; } return o; }
+  var _r = [0, 0, 0], PX = 0, PY = 0, PD = 0;
+  function proj(x, y, z) {
+    toR(x, y, z, _r);
+    var rx = _r[0] - E[0], ry = _r[1] - E[1], rz = _r[2] - E[2];
+    PD = rx * F[0] + ry * F[1] + rz * F[2];
+    var s = focal / Math.max(PD, 0.005);
+    PX = CX + (rx * R[0] + ry * R[1] + rz * R[2]) * s; PY = CY - (rx * U[0] + ry * U[1] + rz * U[2]) * s;
+  }
+  function rayPlane(sx, sy, axis, val) {
+    var dx = F[0] + R[0] * (sx - CX) / focal - U[0] * (sy - CY) / focal;
+    var dy = F[1] + R[1] * (sx - CX) / focal - U[1] * (sy - CY) / focal;
+    var dz = F[2] + R[2] * (sx - CX) / focal - U[2] * (sy - CY) / focal;
+    var d = [dx, dy, dz], e = E[axis];
+    if (Math.abs(d[axis]) < 0.04) return null;
+    var t = (val - e) / d[axis]; if (t <= 0) return null;
+    return [E[0] + dx * t, E[1] + dy * t, E[2] + dz * t];
+  }
+
+  /* ---------- solids ---------- */
+  var polys = [];
+  function addQuad(pts, nrm, fill, alpha, stroke, ctr) {
+    toR(nrm[0], nrm[1], nrm[2], _r);
+    toR(ctr[0], ctr[1], ctr[2], _q);
+    var vx = E[0] - _q[0], vy = E[1] - _q[1], vz = E[2] - _q[2];
+    if (nrm && _r[0] * vx + _r[1] * vy + _r[2] * vz < 0) return;
+    var sp = [], dsum = 0;
+    for (var i = 0; i < pts.length; i++) { proj(pts[i][0], pts[i][1], pts[i][2]); if (PD < 0.01) return; sp.push(PX, PY); dsum += PD; }
+    var lx = -0.35, ly = 0.8, lz = 0.5, ll = Math.hypot(lx, ly, lz);
+    var lam = Math.max(0, (_r[0] * lx + _r[1] * ly + _r[2] * lz) / ll);
+    var shade = 0.42 + 0.58 * lam;
+    polys.push({ p: sp, d: dsum / pts.length, c: fill, s: shade, a: alpha, st: stroke });
+  }
+  var _q = [0, 0, 0];
+  function coilPolys(now) {
+    var nx = D.nx, nz = D.nz, w1 = [-nz, 0, nx], w2 = [0, 1, 0], segs = 40, tint = WIRES[S.wire].tint;
+    function P(a, r, ph) { var c = Math.cos(ph), s = Math.sin(ph); return [a * nx + r * (c * w1[0] + s * w2[0]), r * (c * w1[1] + s * w2[1]), a * nz + r * (c * w1[2] + s * w2[2])]; }
+    function Nr(ph, sgn) { var c = Math.cos(ph), s = Math.sin(ph); return [sgn * (c * w1[0] + s * w2[0]), sgn * (c * w1[1] + s * w2[1]), sgn * (c * w1[2] + s * w2[2])]; }
+    var hl = COIL_LEN / 2, ri = BORE, ro = D.ro, rows = 6;
+    for (var k = 0; k < segs; k++) {
+      var a0 = k / segs * Math.PI * 2, a1 = (k + 1) / segs * Math.PI * 2, am = (a0 + a1) / 2;
+      for (var r = 0; r < rows; r++) {
+        var z0 = -hl + r * COIL_LEN / rows, z1 = z0 + COIL_LEN / rows, sh = r % 2 ? 0.9 : 1;
+        var col = [tint[0] * sh, tint[1] * sh, tint[2] * sh];
+        addQuad([P(z0, ro, a0), P(z1, ro, a0), P(z1, ro, a1), P(z0, ro, a1)], Nr(am, 1), col, 0.94, null, P((z0 + z1) / 2, ro, am));
+      }
+      var inner = [tint[0] * 0.55, tint[1] * 0.55, tint[2] * 0.55];
+      addQuad([P(-hl, ri, a0), P(hl, ri, a0), P(hl, ri, a1), P(-hl, ri, a1)], Nr(am, -1), inner, 0.94, null, P(0, ri, am));
+      var face = [tint[0] * 0.8, tint[1] * 0.8, tint[2] * 0.8];
+      addQuad([P(hl, ri, a0), P(hl, ro, a0), P(hl, ro, a1), P(hl, ri, a1)], [nx, 0, nz], face, 0.94, null, P(hl, (ri + ro) / 2, am));
+      addQuad([P(-hl, ri, a0), P(-hl, ro, a0), P(-hl, ro, a1), P(-hl, ri, a1)], [-nx, 0, -nz], face, 0.94, null, P(-hl, (ri + ro) / 2, am));
+    }
+    if (D.core !== 1) {
+      var cr = BORE - 0.0012, cl = COIL_LEN / 2 + 0.004, iron = [120, 126, 134];
+      for (k = 0; k < 24; k++) {
+        a0 = k / 24 * Math.PI * 2; a1 = (k + 1) / 24 * Math.PI * 2; am = (a0 + a1) / 2;
+        addQuad([P(-cl, cr, a0), P(cl, cr, a0), P(cl, cr, a1), P(-cl, cr, a1)], Nr(am, 1), iron, 1, null, P(0, cr, am));
+      }
+      var capF = [], capB = [];
+      for (k = 0; k < 24; k++) { capF.push(P(cl, cr, k / 24 * Math.PI * 2)); capB.push(P(-cl, cr, -k / 24 * Math.PI * 2)); }
+      addQuad(capF, [nx, 0, nz], iron, 1, null, P(cl, 0, 0)); addQuad(capB, [-nx, 0, -nz], iron, 1, null, P(-cl, 0, 0));
+    }
+  }
+  function magnetPolys() {
+    var c = S.pos, s = D.sgn, segs = 28, R0 = MAG_R, hl = MAG_L / 2;
+    var red = [214, 72, 64], blue = [62, 110, 206];
+    for (var k = 0; k < segs; k++) {
+      var a0 = k / segs * Math.PI * 2, a1 = (k + 1) / segs * Math.PI * 2, am = (a0 + a1) / 2;
+      var y0 = Math.cos(a0) * R0, z0 = Math.sin(a0) * R0, y1 = Math.cos(a1) * R0, z1 = Math.sin(a1) * R0;
+      var nrm = [0, Math.cos(am), Math.sin(am)];
+      addQuad([[c.x, c.y + y0, c.z + z0], [c.x + hl, c.y + y0, c.z + z0], [c.x + hl, c.y + y1, c.z + z1], [c.x, c.y + y1, c.z + z1]], nrm, s > 0 ? red : blue, 1, null, [c.x + hl / 2, c.y + nrm[1] * R0, c.z + nrm[2] * R0]);
+      addQuad([[c.x - hl, c.y + y0, c.z + z0], [c.x, c.y + y0, c.z + z0], [c.x, c.y + y1, c.z + z1], [c.x - hl, c.y + y1, c.z + z1]], nrm, s > 0 ? blue : red, 1, null, [c.x - hl / 2, c.y + nrm[1] * R0, c.z + nrm[2] * R0]);
+    }
+    var capP = [], capN = [];
+    for (k = 0; k < segs; k++) { var a = k / segs * Math.PI * 2; capP.push([c.x + hl, c.y + Math.cos(a) * R0, c.z + Math.sin(a) * R0]); capN.push([c.x - hl, c.y + Math.cos(a) * R0, c.z - Math.sin(a) * R0]); }
+    addQuad(capP, [1, 0, 0], s > 0 ? red : blue, 1, null, [c.x + hl, c.y, c.z]);
+    addQuad(capN, [-1, 0, 0], s > 0 ? blue : red, 1, null, [c.x - hl, c.y, c.z]);
+  }
+  function tubePolys() {
+    var segs = 20, r = 0.0078, x0 = -0.19, x1 = 0.19;
+    for (var k = 0; k < segs; k++) {
+      var a0 = k / segs * Math.PI * 2, a1 = (k + 1) / segs * Math.PI * 2;
+      var p = [[x0, Math.cos(a0) * r, Math.sin(a0) * r], [x1, Math.cos(a0) * r, Math.sin(a0) * r], [x1, Math.cos(a1) * r, Math.sin(a1) * r], [x0, Math.cos(a1) * r, Math.sin(a1) * r]];
+      var sp = [], dsum = 0, ok = true;
+      for (var i = 0; i < 4; i++) { proj(p[i][0], p[i][1], p[i][2]); if (PD < 0.01) ok = false; sp.push(PX, PY); dsum += PD; }
+      if (ok) polys.push({ p: sp, d: dsum / 4, c: [150, 190, 220], s: 1, a: 0.06, st: null });
+    }
+  }
+
+  /* ---------- draw the 3D view ---------- */
+  var view = $('#view');
+  function line3(ctx, a, b) {
+    proj(a[0], a[1], a[2]); if (PD < 0.02) return; var x0 = PX, y0 = PY;
+    proj(b[0], b[1], b[2]); if (PD < 0.02) return; ctx.moveTo(x0, y0); ctx.lineTo(PX, PY);
+  }
+  function label3(ctx, p, txt) { proj(p[0], p[1], p[2]); if (PD < 0.02) return; ctx.fillText(txt, PX, PY); }
+  var arrowPhase = 0, coilPhase = 0;
+  function drawView(now, dt) {
+    var g = fitCanvas(view), ctx = g.ctx, w = g.w, h = g.h;
+    if (cam.goal) {
+      var k = 1 - Math.exp(-dt * 7);
+      cam.yaw += (cam.goal.yaw - cam.yaw) * k; cam.pitch += (cam.goal.pitch - cam.pitch) * k; cam.dist += (cam.goal.dist - cam.dist) * k;
+      if (Math.abs(cam.goal.yaw - cam.yaw) + Math.abs(cam.goal.pitch - cam.pitch) < 1e-3) cam.goal = null;
+    }
+    updateBasis(w, h);
+    ctx.fillStyle = '#0a0d11'; ctx.fillRect(0, 0, w, h);
+    var drop = S.exp === 'drop';
+
+    /* bench grid and scale */
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(140,155,170,0.10)'; ctx.beginPath();
+    if (!drop) {
+      var fy = -(D.ro + 0.006);
+      for (var gx = -0.2; gx <= 0.2001; gx += 0.05) line3(ctx, [gx, fy, -0.15], [gx, fy, 0.15]);
+      for (var gz = -0.15; gz <= 0.1501; gz += 0.05) line3(ctx, [-0.2, fy, gz], [0.2, fy, gz]);
+    } else {
+      for (gx = -0.1; gx <= 0.1001; gx += 0.05) line3(ctx, [-0.19, gx, -0.1], [-0.19, gx, 0.1]);
+      for (gz = -0.1; gz <= 0.1001; gz += 0.05) line3(ctx, [-0.19, -0.1, gz], [-0.19, 0.1, gz]);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,175,190,0.32)'; ctx.beginPath();
+    var axY = drop ? 0 : -(D.ro + 0.006), axZ = drop ? 0.03 : 0.0;
+    if (drop) { line3(ctx, [-0.19, 0, axZ], [0.19, 0, axZ]); } else line3(ctx, [-0.2, axY, 0], [0.2, axY, 0]);
+    for (var cm = -20; cm <= 20; cm++) {
+      var x = cm / 100, big = cm % 5 === 0, tl = big ? 0.004 : 0.002;
+      if (drop && Math.abs(x) > 0.19) continue;
+      if (drop) line3(ctx, [x, 0, axZ], [x, 0, axZ + tl]); else line3(ctx, [x, axY, 0], [x, axY, tl]);
+    }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(160,175,190,0.55)'; ctx.font = "9.5px 'IBM Plex Mono', monospace"; ctx.textAlign = 'center';
+    for (cm = -15; cm <= 15; cm += 5) {
+      x = cm / 100; var lb = (cm === 0 ? '0' : (cm > 0 ? '' : '−') + Math.abs(cm)) + ' cm';
+      if (drop) label3(ctx, [x, 0, axZ + 0.013], lb); else label3(ctx, [x, axY, 0.014], lb);
+    }
+
+    /* field lines: split into segments behind and in front of the solids */
+    proj(0, 0, 0); var dCoil = PD; proj(S.pos.x, S.pos.y, S.pos.z); var dMag = PD;
+    var dSplit = Math.min(dCoil, dMag);
+    var back = [], front = [];
+    for (var b = 0; b < NB; b++) { back.push(new Path2D()); front.push(new Path2D()); }
+    var arrows = [];
+    var spacing = 0.028;
+    for (var li = 0; li < lines.length; li++) {
+      var L = lines[li], P = L.P, px0, py0, pd0;
+      proj(P[0], P[1], P[2]); px0 = PX; py0 = PY; pd0 = PD;
+      for (var i = 1; i < L.n; i++) {
+        proj(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+        if (PD > 0.02 && pd0 > 0.02) {
+          var bk = bucketOf(L.B[i]), path = (PD + pd0) / 2 < dSplit ? front[bk] : back[bk];
+          path.moveTo(px0, py0); path.lineTo(PX, PY);
+        }
+        px0 = PX; py0 = PY; pd0 = PD;
+      }
+      /* moving arrowheads along the field direction */
+      var total = L.cum[L.n - 1], off = (arrowPhase + li * 0.0071) % spacing, j = 1;
+      for (var sA = off + spacing * 0.5; sA < total - 0.004; sA += spacing) {
+        while (j < L.n - 1 && L.cum[j] < sA) j++;
+        var f = (sA - L.cum[j - 1]) / Math.max(1e-9, L.cum[j] - L.cum[j - 1]);
+        var ax = P[j * 3 - 3] + (P[j * 3] - P[j * 3 - 3]) * f, ay = P[j * 3 - 2] + (P[j * 3 + 1] - P[j * 3 - 2]) * f, az = P[j * 3 - 1] + (P[j * 3 + 2] - P[j * 3 - 1]) * f;
+        proj(ax, ay, az); if (PD < 0.02) continue; var ux = PX, uy = PY, ud = PD;
+        proj(P[j * 3], P[j * 3 + 1], P[j * 3 + 2]); var vx = PX - ux, vy = PY - uy, vl = Math.hypot(vx, vy);
+        if (vl < 0.01) continue;
+        arrows.push([ux, uy, vx / vl, vy / vl, ud < dSplit]);
+      }
+    }
+    function strokeLines(paths, alpha) {
+      ctx.lineWidth = 1.35; ctx.globalAlpha = alpha;
+      for (var b = 0; b < NB; b++) { ctx.strokeStyle = BUCKET[b]; ctx.stroke(paths[b]); }
+      ctx.globalAlpha = 1;
+    }
+    function drawArrows(isFront) {
+      ctx.fillStyle = 'rgba(235,240,245,0.85)'; ctx.beginPath();
+      for (var i = 0; i < arrows.length; i++) {
+        var a = arrows[i]; if (a[4] !== isFront) continue;
+        var x = a[0], y = a[1], dx = a[2], dy = a[3];
+        ctx.moveTo(x + dx * 3.2, y + dy * 3.2); ctx.lineTo(x - dx * 2.2 - dy * 2.2, y - dy * 2.2 + dx * 2.2); ctx.lineTo(x - dx * 2.2 + dy * 2.2, y - dy * 2.2 - dx * 2.2); ctx.closePath();
+      }
+      ctx.fill();
+    }
+    strokeLines(back, 0.9); drawArrows(false);
+
+    /* solids, painter sorted */
+    polys = [];
+    coilPolys(now); magnetPolys(); if (drop) tubePolys();
+    polys.sort(function (a, b) { return b.d - a.d; });
+    for (i = 0; i < polys.length; i++) {
+      var q = polys[i], p = q.p;
+      ctx.beginPath(); ctx.moveTo(p[0], p[1]);
+      for (var m = 2; m < p.length; m += 2) ctx.lineTo(p[m], p[m + 1]);
+      ctx.closePath();
+      ctx.globalAlpha = q.a;
+      var cc = q.c;
+      ctx.fillStyle = 'rgb(' + Math.round(cc[0] * q.s) + ',' + Math.round(cc[1] * q.s) + ',' + Math.round(cc[2] * q.s) + ')';
+      ctx.fill();
+      if (q.a > 0.5) { ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 0.6; ctx.stroke(); }
+    }
+    ctx.globalAlpha = 1;
+    if (drop) {
+      ctx.strokeStyle = 'rgba(170,205,230,0.28)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (var e = 0; e < 2; e++) {
+        var xe = e ? 0.19 : -0.19;
+        for (var kk = 0; kk <= 24; kk++) { var an = kk / 24 * Math.PI * 2; proj(xe, Math.cos(an) * 0.0078, Math.sin(an) * 0.0078); if (kk) ctx.lineTo(PX, PY); else ctx.moveTo(PX, PY); }
+      }
+      ctx.stroke();
+    }
+
+    /* current flow markers on the winding */
+    if (Math.abs(S.I) > 1e-6 && !reduceMotion) {
+      var spd = Math.sign(S.I) * Math.min(2.5, 0.4 + 0.35 * Math.log10(Math.abs(S.I) / 1e-6));
+      coilPhase += dt * spd * (S.timeScale);
+      var nx = D.nx, nz = D.nz, w1 = [-nz, 0, nx], rr = D.ro + 0.0006;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      for (var cd = 0; cd < 14; cd++) {
+        var ph = cd / 14 * Math.PI * 2 + coilPhase, cph = Math.cos(ph), sph = Math.sin(ph);
+        var pxw = rr * cph * w1[0], pyw = rr * sph, pzw = rr * cph * w1[2];
+        toR(cph * w1[0], sph, cph * w1[2], _r); toR(pxw, pyw, pzw, _q);
+        if (_r[0] * (E[0] - _q[0]) + _r[1] * (E[1] - _q[1]) + _r[2] * (E[2] - _q[2]) < 0) continue;
+        proj(pxw, pyw, pzw); ctx.beginPath(); ctx.arc(PX, PY, 1.7, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    strokeLines(front, 0.95); drawArrows(true);
+
+    /* pole labels */
+    ctx.font = "600 10px 'IBM Plex Sans Condensed', sans-serif"; ctx.fillStyle = '#e8edf2'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var s = D.sgn, hl = MAG_L / 2 + 0.006;
+    label3(ctx, [S.pos.x + s * hl, S.pos.y + MAG_R + 0.004, S.pos.z], 'N');
+    label3(ctx, [S.pos.x - s * hl, S.pos.y + MAG_R + 0.004, S.pos.z], 'S');
+    ctx.textBaseline = 'alphabetic';
+    if (hoverMag || S.dragging) {
+      proj(S.pos.x, S.pos.y, S.pos.z);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(PX, PY, magPx() + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  function magPx() { proj(S.pos.x, S.pos.y, S.pos.z); return Math.max(14, focal * MAG_L / 2 / Math.max(PD, 0.01)); }
+
+  /* ---------- pointer interaction ---------- */
+  var ptrs = new Map(), mode = null, last = null, pinch0 = 0, dist0 = 0, hoverMag = false;
+  function localXY(e) { var r = view.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  function nearMag(x, y) { var rr = magPx(); proj(S.pos.x, S.pos.y, S.pos.z); return Math.hypot(x - PX, y - PY) < rr + 8; }
+  function dragTo(x, y) {
+    var hit;
+    if (S.exp === 'drop') {
+      hit = rayPlane(x, y, 2, 0);
+      if (!hit) return;
+      S.target = { x: Math.max(-0.17, Math.min(0.19, hit[1])), z: 0 };
+    } else {
+      hit = rayPlane(x, y, 1, 0);
+      if (hit) S.target = { x: Math.max(-0.2, Math.min(0.2, hit[0])), z: Math.max(-0.15, Math.min(0.15, hit[2])) };
+      else { hit = rayPlane(x, y, 2, S.pos.z); if (hit) S.target = { x: Math.max(-0.2, Math.min(0.2, hit[0])), z: S.pos.z }; }
+    }
+  }
+  view.addEventListener('pointerdown', function (e) {
+    view.setPointerCapture(e.pointerId);
+    var p = localXY(e); ptrs.set(e.pointerId, p);
+    if (ptrs.size === 2) {
+      var a = Array.from(ptrs.values()); pinch0 = Math.hypot(a[0][0] - a[1][0], a[0][1] - a[1][1]); dist0 = cam.dist;
+      if (mode === 'drag') { S.dragging = false; afterDrag(); } mode = 'pinch'; return;
+    }
+    if (!spaceDown && nearMag(p[0], p[1])) { mode = 'drag'; S.dragging = true; S.target = { x: S.pos.x, z: S.pos.z }; dragTo(p[0], p[1]); }
+    else { mode = 'orbit'; cam.goal = null; view.classList.add('grab'); }
+    last = p;
+  });
+  view.addEventListener('pointermove', function (e) {
+    var p = localXY(e);
+    if (!ptrs.has(e.pointerId)) { hoverMag = nearMag(p[0], p[1]); view.classList.toggle('over', hoverMag); return; }
+    ptrs.set(e.pointerId, p);
+    if (mode === 'pinch' && ptrs.size === 2) {
+      var a = Array.from(ptrs.values()), d = Math.hypot(a[0][0] - a[1][0], a[0][1] - a[1][1]);
+      cam.dist = Math.max(0.18, Math.min(1.2, dist0 * pinch0 / Math.max(d, 1)));
+    } else if (mode === 'drag') dragTo(p[0], p[1]);
+    else if (mode === 'orbit') {
+      cam.yaw -= (p[0] - last[0]) * 0.008; cam.pitch = Math.max(-1.2, Math.min(1.5, cam.pitch + (p[1] - last[1]) * 0.008));
+      markCustomView();
+    }
+    last = p;
+  });
+  function endPtr(e) {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 0) {
+      if (mode === 'drag') { S.dragging = false; afterDrag(); }
+      mode = null; view.classList.remove('grab');
+    }
+  }
+  function afterDrag() {
+    if (S.exp === 'drop') { S.vx = 0; S.pause = 0; }
+    else if (S.motion === 'swing') S.phase = Math.asin(Math.max(-1, Math.min(1, S.pos.x / SWING_A)));
+    else if (S.motion === 'slide') S.vx = 0;
+  }
+  view.addEventListener('pointerup', endPtr); view.addEventListener('pointercancel', endPtr);
+  view.addEventListener('pointerleave', function () { if (!ptrs.size) { hoverMag = false; view.classList.remove('over'); } });
+  view.addEventListener('wheel', function (e) { e.preventDefault(); cam.goal = null; cam.dist = Math.max(0.18, Math.min(1.2, cam.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+  var spaceDown = false;
+  window.addEventListener('keydown', function (e) { if (e.code === 'Space' && e.target === document.body) { spaceDown = true; e.preventDefault(); } });
+  window.addEventListener('keyup', function (e) { if (e.code === 'Space') spaceDown = false; });
+  function markCustomView() { document.querySelectorAll('[data-view]').forEach(function (b) { b.classList.remove('on'); }); }
+  $('#vbtns').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.view) setView(b.dataset.view);
+    if (b.dataset.lines) { S.lines = b.dataset.lines; sync(); }
+  });
+
+  /* ---------- galvanometer ---------- */
+  var RANGES = [2, 0.2, 0.02, 2e-3, 2e-4, 2e-5, 2e-6], range = 2, peakI = 0, needle = 0, needleV = 0;
+  var galvo = $('#galvo');
+  function drawGalvo(now, dt) {
+    var g = fitCanvas(galvo), ctx = g.ctx, w = g.w, h = g.h, T = tok(now);
+    ctx.clearRect(0, 0, w, h);
+    peakI = Math.max(Math.abs(S.I), peakI * Math.exp(-dt / 1.5));
+    var want = RANGES[0];
+    for (var i = 0; i < RANGES.length; i++) if (RANGES[i] >= peakI * 1.05) want = RANGES[i];
+    if (want > range || want < range * 0.15) range = want;
+    var target = Math.max(-1.08, Math.min(1.08, S.I / range));
+    var acc = 90 * (target - needle) - 13 * needleV; needleV += acc * dt; needle += needleV * dt;
+    if (reduceMotion) { needle = target; needleV = 0; }
+    var cx = w / 2, cy = h - 18, r = Math.min(w * 0.42, h - 32), A = 0.9;
+    ctx.strokeStyle = T['--ink']; ctx.lineWidth = 1.2; ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI / 2 - A, -Math.PI / 2 + A); ctx.stroke();
+    for (i = -10; i <= 10; i++) {
+      var a = -Math.PI / 2 + A * i / 10, l = i % 5 === 0 ? 9 : 4.5;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.lineTo(cx + Math.cos(a) * (r - l), cy + Math.sin(a) * (r - l)); ctx.stroke();
+    }
+    var lab = si(range, 'A');
+    ctx.fillStyle = T['--muted']; ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = 'center';
+    ctx.fillText('0', cx, cy - r - 6);
+    ctx.fillText('−' + lab[0] + ' ' + lab[1], cx + Math.cos(-Math.PI / 2 - A) * (r + 4) - 6, cy + Math.sin(-Math.PI / 2 - A) * r + 18);
+    ctx.fillText(lab[0] + ' ' + lab[1], cx + Math.cos(-Math.PI / 2 + A) * (r + 4) + 6, cy + Math.sin(-Math.PI / 2 + A) * r + 18);
+    var na = -Math.PI / 2 + A * needle;
+    ctx.strokeStyle = '#d0682f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(na) * (r - 3), cy + Math.sin(na) * (r - 3)); ctx.stroke();
+    ctx.fillStyle = T['--ink']; ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /* ---------- oscilloscope ---------- */
+  var scope = $('#scope');
+  function niceDiv(peak) {
+    var seq = [1, 2, 5], target = Math.max(peak, 1e-9) / 3.6, e = Math.floor(Math.log10(target));
+    for (var k = e; k < e + 3; k++) for (var i = 0; i < 3; i++) { var v = seq[i] * Math.pow(10, k); if (v >= target) return v; }
+    return Math.pow(10, e + 1);
+  }
+  function drawScope(now) {
+    var g = fitCanvas(scope), ctx = g.ctx, w = g.w, h = g.h;
+    var padL = 50, padR = 50, padT = 4, padB = 18, W = w - padL - padR, H = h - padT - padB;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#07100b'; ctx.fillRect(padL, padT, W, H);
+    ctx.strokeStyle = 'rgba(80,140,105,0.22)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (var i = 0; i <= 10; i++) { var x = padL + W * i / 10; ctx.moveTo(x + 0.5, padT); ctx.lineTo(x + 0.5, padT + H); }
+    for (i = 0; i <= 8; i++) { var y = padT + H * i / 8; ctx.moveTo(padL, y + 0.5); ctx.lineTo(padL + W, y + 0.5); }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(80,140,105,0.45)'; ctx.beginPath(); ctx.moveTo(padL, padT + H / 2 + 0.5); ctx.lineTo(padL + W, padT + H / 2 + 0.5); ctx.stroke();
+    var p1 = 0, p2 = 0;
+    for (i = 0; i < SCOPE_N; i++) { p1 = Math.max(p1, Math.abs(scopeBuf[i * 2])); p2 = Math.max(p2, Math.abs(scopeBuf[i * 2 + 1])); }
+    var d1 = niceDiv(p1), d2 = niceDiv(p2);
+    function trace(ch, div, col) {
+      ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.beginPath();
+      for (var i = 0; i < SCOPE_N; i++) {
+        var idx = (scopeHead + i) % SCOPE_N, v = scopeBuf[idx * 2 + ch];
+        var x = padL + W * i / (SCOPE_N - 1), y = padT + H / 2 - v / div * (H / 8);
+        y = Math.max(padT, Math.min(padT + H, y));
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    trace(1, d2, '#ff8a4c'); trace(0, d1, '#4fd18b');
+    var T = tok(now);
+    ctx.font = "9.5px 'IBM Plex Mono', monospace";
+    var a = si(d1 * 4, 'V'), b = si(d2 * 4, 'A');
+    ctx.textAlign = 'right'; ctx.fillStyle = '#2fa865';
+    ctx.fillText(a[0] + ' ' + a[1], padL - 5, padT + 9); ctx.fillText('−' + a[0] + ' ' + a[1], padL - 5, padT + H);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#d96a2e';
+    ctx.fillText(b[0] + ' ' + b[1], padL + W + 5, padT + 9); ctx.fillText('−' + b[0] + ' ' + b[1], padL + W + 5, padT + H);
+    ctx.textAlign = 'center'; ctx.fillStyle = T['--muted'];
+    ctx.fillText('0.5 s/div', padL + W / 2, h - 5);
+    $('#scopeLbl').textContent = 'CH1 EMF ' + sis(d1, 'V') + '/div · CH2 current ' + sis(d2, 'A') + '/div';
+  }
+
+  /* ---------- flux linkage plot ---------- */
+  var flux = $('#flux'), fluxKey = '', fluxXs = [], fluxYs = [];
+  function fluxCurve() {
+    var key = [S.exp, S.mat, S.flip, S.turns, S.angle, D.core, Math.round(S.pos.z * 1000)].join('|');
+    if (key === fluxKey) return;
+    fluxKey = key; fluxXs = []; fluxYs = [];
+    for (var i = 0; i <= 150; i++) { var x = -0.15 + 0.3 * i / 150; fluxXs.push(x); fluxYs.push(lambdaAt(x, 0, S.exp === 'drop' ? 0 : S.pos.z)); }
+  }
+  function drawFlux(now) {
+    fluxCurve();
+    var g = fitCanvas(flux), ctx = g.ctx, w = g.w, h = g.h, T = tok(now);
+    var padL = 58, padR = 14, padT = 8, padB = 30, W = w - padL - padR, H = h - padT - padB;
+    ctx.clearRect(0, 0, w, h);
+    var lo = 0, hi = 0;
+    for (var i = 0; i < fluxYs.length; i++) { lo = Math.min(lo, fluxYs[i]); hi = Math.max(hi, fluxYs[i]); }
+    var span = Math.max(hi - lo, 1e-9); lo -= span * 0.08; hi += span * 0.12;
+    var X = function (x) { return padL + (x + 0.15) / 0.3 * W; }, Y = function (v) { return padT + (hi - v) / (hi - lo) * H; };
+    ctx.strokeStyle = T['--rule']; ctx.lineWidth = 1; ctx.beginPath();
+    for (var cm = -15; cm <= 15; cm += 5) { var x = Math.round(X(cm / 100)) + 0.5; ctx.moveTo(x, padT); ctx.lineTo(x, padT + H); }
+    ctx.stroke();
+    ctx.strokeStyle = T['--faint']; ctx.beginPath(); ctx.moveTo(padL, Math.round(Y(0)) + 0.5); ctx.lineTo(padL + W, Math.round(Y(0)) + 0.5); ctx.stroke();
+    ctx.fillStyle = T['--muted']; ctx.font = "9.5px 'IBM Plex Mono', monospace"; ctx.textAlign = 'center';
+    for (cm = -15; cm <= 15; cm += 5) ctx.fillText(cm === 0 ? '0' : (cm < 0 ? '−' : '') + Math.abs(cm), X(cm / 100), padT + H + 13);
+    ctx.fillText(S.exp === 'drop' ? 'magnet height above coil centre, cm' : 'magnet position x, cm', padL + W / 2, h - 4);
+    ctx.textAlign = 'right';
+        var vMax = fluxYs.reduce(function (a, b) { return Math.max(a, b); }, -1), vMin = fluxYs.reduce(function (a, b) { return Math.min(a, b); }, 1);
+    [vMax, 0, vMin].forEach(function (v, k) {
+      if (k !== 1 && Math.abs(v) < span * 0.05) return;
+      var l = si(v, 'Wb'); ctx.fillText(l[0] + ' ' + l[1], padL - 6, Y(v) + 3);
+    });
+    /* curve */
+    ctx.strokeStyle = T['--ink']; ctx.lineWidth = 1.6; ctx.beginPath();
+    for (i = 0; i < fluxXs.length; i++) { var px = X(fluxXs[i]), py = Y(fluxYs[i]); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+    ctx.stroke();
+    /* marker + tangent */
+    var mx = S.pos.x;
+    if (Math.abs(mx) <= 0.15) {
+      var lam = S.lam, slope = S.dLdx, dx = 0.025;
+      ctx.save(); ctx.beginPath(); ctx.rect(padL, padT, W, H); ctx.clip();
+      ctx.strokeStyle = '#d0682f'; ctx.lineWidth = 1.3; ctx.setLineDash([4, 3]); ctx.beginPath();
+      ctx.moveTo(X(mx - dx), Y(lam - slope * dx)); ctx.lineTo(X(mx + dx), Y(lam + slope * dx)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.restore();
+      ctx.fillStyle = '#d0682f'; ctx.beginPath(); ctx.arc(X(mx), Y(lam), 4, 0, Math.PI * 2); ctx.fill();
+    }
+    var sl = si(S.dLdx, 'Wb/m'), sp = S.vx, em = si(-S.dLdx * sp, 'V');
+    ctx.textAlign = 'left'; ctx.fillStyle = T['--muted'];
+    ctx.fillText('slope ' + sl[0] + ' ' + sl[1] + ' × ' + sp.toFixed(2) + ' m/s → ' + em[0] + ' ' + em[1], padL + 6, padT + 11);
+  }
+
+  /* ---------- readouts and status ---------- */
+  var readAt = 0;
+  function readouts(now) {
+    if (now - readAt < 110) return; readAt = now;
+    gradLambda();
+    setV($('#vEmf'), S.emf, 'V'); $('#sEmf').textContent = 'flux per turn ' + sis(S.lam / D.N, 'Wb');
+    setV($('#vI'), S.I, 'A');
+    var ib = S.volts / D.Rt; $('#sI').textContent = 'batt ' + sis(ib, 'A') + ' · ind ' + sis(S.I - ib, 'A');
+    coilUnit(0, 0, 0); var Bc = S.I * D.core * (CBx * D.nx + CBz * D.nz);
+    setV($('#vB'), Bc, 'T'); $('#sB').textContent = D.N + ' turns, ' + sis(D.Rc, 'Ω');
+    var Fm = Math.hypot(S.Fx, S.Fz), toward = -(S.Fx * S.pos.x + S.Fz * S.pos.z) > 0;
+    setV($('#vF'), Fm, 'N');
+    $('#sF').textContent = S.exp === 'drop' ? (Math.abs(S.vx).toFixed(2) + ' m/s, weight ' + sis(D.mass * G, 'N')) : (Fm < 1e-9 ? 'no current, no force' : (toward ? 'pull toward coil' : 'push from coil'));
+    $('#galvoRange').textContent = '';
+    $('#clock').textContent = 't ' + S.t.toFixed(1) + ' s · step 0.5 ms' + (S.timeScale !== 1 ? ' · slow 1/5' : '');
+    var st = statusLine(Fm, toward), el = $('#status');
+    el.dataset.k = st[1]; $('#statusText').textContent = st[0];
+  }
+  function statusLine(Fm, toward) {
+    var v = Math.hypot(S.vx, S.vz), thr = MU_S * D.mass * G;
+    if (S.exp === 'drop') {
+      if (S.dragging) return ['Holding the magnet above the coil. Let go to drop it.', 'idle'];
+      if (S.pause > 0 && S.pos.x < 0) return ['Magnet landed. It goes back to the top in a moment.', 'idle'];
+      if (S.volts !== 0 && Math.abs(S.Fx) > 0.6 * D.mass * G && v < 0.15) return ['The coil current is strong enough to catch the magnet against gravity.', 'warn'];
+      if (v < 0.02) return ['Magnet about to drop.', 'idle'];
+      return ['Falling at ' + v.toFixed(2) + ' m/s. The induced current opposes the fall (Lenz’s law).', 'live'];
+    }
+    if (S.volts !== 0) {
+      if (Fm < thr && v < 0.01) return ['Electromagnet on, but too far or too turned to pull the magnet.', 'warn'];
+      if (S.motion === 'slide' && v > 0.01) return ['Electromagnet ' + (toward ? 'pulling the magnet in' : 'pushing the magnet away') + ', ' + v.toFixed(2) + ' m/s.', 'live'];
+      return ['Electromagnet on, ' + (toward ? 'pulling the magnet toward the coil' : 'pushing the magnet away') + ' with ' + sis(Fm, 'N') + '.', 'live'];
+    }
+    if (v > 0.01) return ['Magnet moving at ' + v.toFixed(2) + ' m/s. The changing flux induces ' + sis(S.emf, 'V') + ' in the coil.', 'live'];
+    return ['Magnet at rest, so the flux is steady and nothing is induced. Drag it, or pick Swing.', 'idle'];
+  }
+
+  /* ---------- main loop ---------- */
+  var lastT = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+    var sim = dt * S.timeScale, n = Math.max(1, Math.ceil(sim / 0.0005)), h = sim / n;
+    for (var i = 0; i < n; i++) substep(h);
+    if (!reduceMotion) arrowPhase += dt * 0.018;
+    /* the coil only joins the drawn field when its own field is visible */
+    coilUnit(0, 0, 0);
+    var bcoil = Math.abs(S.I * D.core * (CBx * D.nx + CBz * D.nz));
+    var nv = bcoil > 5e-5 ? S.I * D.core : 0;
+    var sig = [S.pos.x.toFixed(4), S.pos.z.toFixed(4), nv ? nv.toPrecision(2) : 0, S.lines, S.flip, S.mat, S.angle, S.turns, D.core, S.exp].join('|');
+    if ((sig !== linesSig || linesDirty) && now - linesAt > Math.max(0, linesCost * 2.2)) {
+      vizCoil = nv; linesSig = sig; linesDirty = false; linesAt = now; computeLines();
+    }
+    drawView(now, dt); drawGalvo(now, dt); drawScope(now); drawFlux(now); readouts(now);
+    requestAnimationFrame(frame);
+  }
+
+  derive(); S.phase = Math.asin(0.9); sync(); setView('angled', true);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
