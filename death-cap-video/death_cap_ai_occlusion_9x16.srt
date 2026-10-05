@@ -1,0 +1,212 @@
+1
+00:00:00,290 --> 00:00:01,510
+Mistaking a dog breed
+
+2
+00:00:01,510 --> 00:00:02,861
+with AI is harmless,
+
+3
+00:00:02,861 --> 00:00:04,046
+but a false positive
+
+4
+00:00:04,046 --> 00:00:05,231
+on a toxic mushroom
+
+5
+00:00:05,231 --> 00:00:06,578
+can be fatal.
+
+6
+00:00:06,632 --> 00:00:08,023
+The reason computer vision
+
+7
+00:00:08,023 --> 00:00:08,860
+fails so badly
+
+8
+00:00:08,860 --> 00:00:10,045
+is a physical trap
+
+9
+00:00:10,045 --> 00:00:11,633
+called visual occlusion.
+
+10
+00:00:11,688 --> 00:00:12,900
+Take the death cap,
+
+11
+00:00:12,900 --> 00:00:14,189
+a highly toxic mushroom
+
+12
+00:00:14,189 --> 00:00:15,371
+AI frequently mistakes
+
+13
+00:00:15,371 --> 00:00:17,169
+for a harmless edible.
+
+14
+00:00:17,223 --> 00:00:18,163
+AI relies strictly
+
+15
+00:00:18,163 --> 00:00:19,613
+on surface pixels.
+
+16
+00:00:19,668 --> 00:00:20,504
+From a top-down
+
+17
+00:00:20,504 --> 00:00:21,470
+smartphone photo,
+
+18
+00:00:21,470 --> 00:00:22,448
+the death cap's shape
+
+19
+00:00:22,448 --> 00:00:24,176
+looks perfectly innocent.
+
+20
+00:00:24,230 --> 00:00:25,170
+But human experts
+
+21
+00:00:25,170 --> 00:00:27,147
+don't just look at the cap.
+
+22
+00:00:27,201 --> 00:00:27,934
+To spot this
+
+23
+00:00:27,934 --> 00:00:28,865
+specific threat,
+
+24
+00:00:28,865 --> 00:00:29,843
+they check for a
+
+25
+00:00:29,843 --> 00:00:30,609
+sack-like structure
+
+26
+00:00:30,609 --> 00:00:32,586
+at the base of the stem.
+
+27
+00:00:32,640 --> 00:00:34,097
+But out in the wild,
+
+28
+00:00:34,097 --> 00:00:34,934
+this crucial root
+
+29
+00:00:34,934 --> 00:00:36,013
+is completely buried
+
+30
+00:00:36,013 --> 00:00:38,055
+under soil and fallen leaves.
+
+31
+00:00:38,110 --> 00:00:38,946
+Because it's blocked
+
+32
+00:00:38,946 --> 00:00:40,855
+from the camera's line of sight
+
+33
+00:00:40,855 --> 00:00:42,169
+that's visual occlusion
+
+34
+00:00:42,169 --> 00:00:43,864
+the data doesn't exist.
+
+35
+00:00:43,918 --> 00:00:44,997
+And this limitation
+
+36
+00:00:44,997 --> 00:00:46,832
+goes deeper than the dirt.
+
+37
+00:00:46,886 --> 00:00:48,106
+Splitting the stem open
+
+38
+00:00:48,106 --> 00:00:49,526
+reveals hidden dark stains,
+
+39
+00:00:49,526 --> 00:00:50,812
+a chemical indicator
+
+40
+00:00:50,812 --> 00:00:51,914
+of poison.
+
+41
+00:00:51,968 --> 00:00:53,256
+A 2D surface image
+
+42
+00:00:53,256 --> 00:00:54,196
+can never capture
+
+43
+00:00:54,196 --> 00:00:55,750
+that internal texture.
+
+44
+00:00:55,804 --> 00:00:56,989
+Because AI can't infer
+
+45
+00:00:56,989 --> 00:00:58,408
+features it can't see,
+
+46
+00:00:58,408 --> 00:00:59,835
+it makes life-or-death guesses
+
+47
+00:00:59,835 --> 00:01:01,666
+using deceptive camouflage.
+
+48
+00:01:01,720 --> 00:01:03,281
+And that deadly death cap,
+
+49
+00:01:03,281 --> 00:01:04,362
+missing the buried root
+
+50
+00:01:04,362 --> 00:01:05,434
+and toxic stains,
+
+51
+00:01:05,434 --> 00:01:06,861
+the AI confidently labels
+
+52
+00:01:06,861 --> 00:01:08,107
+the lethal hazard:
+
+53
+00:01:08,107 --> 00:01:11,000
+safe to eat.
+
