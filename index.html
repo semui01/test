@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>3D Chemistry Lego Builder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      overscroll-behavior: none; touch-action: none;
+      background: radial-gradient(ellipse at 50% 35%, #1b2338 0%, #0b0f1a 55%, #05070d 100%);
+      color: #e2e8f0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none; user-select: none;
+    }
+    #scene { position: fixed; inset: 0; display: block; touch-action: none; }
+    .glass {
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+    .panel { position: fixed; z-index: 20; border-radius: 14px; max-width: calc(100vw - 32px); }
+    .panel-header { cursor: grab; touch-action: none; }
+    .panel-header:active { cursor: grabbing; }
+    .panel.collapsed .panel-body { display: none; }
+    .panel.collapsed .panel-header { border-bottom-color: transparent; }
+    .panel.collapsed .chevron { transform: rotate(-90deg); }
+    .chevron { transition: transform 0.2s ease; }
+    .chip { transition: background-color .15s, border-color .15s, box-shadow .15s; }
+    .chip.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 0 14px -2px rgba(56, 189, 248, 0.5);
+    }
+    input, textarea { -webkit-user-select: text; user-select: text; }
+    #toast { transition: opacity .25s ease, transform .25s ease; }
+    #toast.hidden-toast { opacity: 0; transform: translate(-50%, -12px); pointer-events: none; }
+    .kbd { font-family: ui-monospace, monospace; font-size: 10px; padding: 1px 5px; border-radius: 4px;
+           border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); }
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff;
+               border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- Empty-scene hint -->
+  <div id="hint" class="fixed inset-0 flex items-center justify-center pointer-events-none z-10">
+    <div class="text-center text-slate-400/80">
+      <div class="text-2xl font-light tracking-wide">Click anywhere to place an atom</div>
+      <div class="text-sm mt-2">or import a molecule by name from PubChem</div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden-toast glass fixed left-1/2 top-5 z-50 px-4 py-2 rounded-lg text-sm font-medium"
+       style="transform: translateX(-50%);"></div>
+
+  <!-- Instructions Panel -->
+  <div id="panel-instructions" class="panel glass" style="left:16px; top:16px; width:290px;">
+    <div class="panel-header flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <span class="text-sm font-semibold tracking-wide text-sky-300">⚛ Instructions</span>
+      <svg class="chevron w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z"/></svg>
+    </div>
+    <div class="panel-body px-4 py-3 text-[13px] leading-relaxed text-slate-300 space-y-1.5">
+      <p><b class="text-slate-100">Left-click empty space</b> — spawn a free atom / group.</p>
+      <p><b class="text-slate-100">Left-click an atom</b> — attach a new atom / group with the selected bond order.</p>
+      <p><b class="text-slate-100">Right-click an atom</b> — delete it and its bonds <span class="text-slate-400">(long-press on touch)</span>.</p>
+      <p><b class="text-slate-100">Shift-click two atoms</b> — bond existing atoms (close rings, change bond order). Or use <b>🔗 Link</b>.</p>
+      <p><b class="text-slate-100">Drag</b> to rotate, <b class="text-slate-100">scroll / pinch</b> to zoom.</p>
+      <p class="pt-1 text-slate-400">Keys: <span class="kbd">C</span> <span class="kbd">H</span> <span class="kbd">O</span> <span class="kbd">N</span> <span class="kbd">F</span> <span class="kbd">P</span> <span class="kbd">S</span> <span class="kbd">L</span>=Cl <span class="kbd">B</span>=Br <span class="kbd">I</span> elements · <span class="kbd">1</span><span class="kbd">2</span><span class="kbd">3</span> bond order · <span class="kbd">V</span> view</p>
+      <p class="text-slate-400">Panels can be dragged by their headers; click a header to collapse it.</p>
+    </div>
+  </div>
+
+  <!-- Actions Panel -->
+  <div id="panel-actions" class="panel glass" style="right:16px; top:16px; width:300px;">
+    <div class="panel-header flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <span class="text-sm font-semibold tracking-wide text-emerald-300">⚗ Actions</span>
+      <svg class="chevron w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z"/></svg>
+    </div>
+    <div class="panel-body px-4 py-3 space-y-3 text-sm">
+      <form id="import-form" class="space-y-1.5">
+        <label class="text-xs uppercase tracking-wider text-slate-400" for="import-name">Import from PubChem</label>
+        <div class="flex gap-2">
+          <input id="import-name" type="text" placeholder="e.g. caffeine, benzene" autocomplete="off"
+                 class="flex-1 min-w-0 bg-slate-900/60 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400/70" />
+          <button id="import-btn" type="submit"
+                  class="px-3 py-1.5 rounded-lg bg-sky-500/80 hover:bg-sky-400 text-white text-sm font-medium whitespace-nowrap">Import</button>
+        </div>
+      </form>
+
+      <div class="space-y-1.5">
+        <button id="name-btn" class="w-full px-3 py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-400 text-white font-medium">Get Molecule Name</button>
+        <div id="name-result" class="hidden rounded-lg bg-slate-900/60 border border-white/10 px-3 py-2 space-y-1">
+          <div id="name-title" class="text-base font-semibold text-slate-50 break-words"></div>
+          <div id="name-iupac" class="text-xs text-slate-400 break-words"></div>
+          <div id="name-smiles" class="text-[11px] font-mono text-sky-300/90 break-all"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button id="fillh-btn" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10">Add Hydrogens</button>
+        <button id="clear-btn" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/30 text-rose-200">Clear Scene</button>
+      </div>
+
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs uppercase tracking-wider text-slate-400">View</span>
+        <button id="view-btn" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">● Ball &amp; Stick</button>
+      </div>
+      <label class="flex items-center justify-between gap-2 cursor-pointer">
+        <span class="text-xs uppercase tracking-wider text-slate-400">Show lone pairs</span>
+        <input id="lp-toggle" type="checkbox" class="accent-sky-400 w-4 h-4" />
+      </label>
+
+      <div class="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+        <span id="stats">0 atoms · 0 bonds</span>
+        <span id="formula" class="font-mono text-slate-200"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toolbox Panel -->
+  <div id="panel-toolbox" class="panel glass" style="left:50%; bottom:16px; transform:translateX(-50%); width:760px;">
+    <div class="panel-header flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+      <span class="text-sm font-semibold tracking-wide text-amber-300">🧰 Toolbox <span id="current-label" class="ml-2 font-normal text-slate-400 text-xs"></span></span>
+      <svg class="chevron w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z"/></svg>
+    </div>
+    <div class="panel-body px-4 py-3 space-y-2.5 text-sm">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="w-16 text-xs uppercase tracking-wider text-slate-400">Atom</span>
+        <div id="atom-buttons" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="w-16 text-xs uppercase tracking-wider text-slate-400">Group</span>
+        <div id="group-buttons" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="w-16 text-xs uppercase tracking-wider text-slate-400">Bond</span>
+        <div id="bond-buttons" class="flex flex-wrap gap-1.5"></div>
+        <button id="link-btn" class="chip ml-auto px-3 py-1 rounded-md border border-white/10 bg-white/5 hover:bg-white/10" title="Bond two existing atoms (same as Shift-click)">🔗 Link</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ------------------------------------------------------------------
+    // Chemistry data
+    // ------------------------------------------------------------------
+    // color: CPK-ish, mass: amu, cov: covalent radius (Å), vdw: van der Waals radius (Å),
+    // maxValence: hard bonding cap, valenceElectrons: for lone pairs / formal charges.
+    const ELEMENTS = {
+      H:  { name: 'Hydrogen',   z: 1,  color: 0xf5f5f5, mass: 1.008,   cov: 0.31, vdw: 1.20, maxValence: 1, valenceElectrons: 1 },
+      C:  { name: 'Carbon',     z: 6,  color: 0x8a8f98, mass: 12.011,  cov: 0.76, vdw: 1.70, maxValence: 4, valenceElectrons: 4 },
+      N:  { name: 'Nitrogen',   z: 7,  color: 0x3b6cff, mass: 14.007,  cov: 0.71, vdw: 1.55, maxValence: 4, valenceElectrons: 5 },
+      O:  { name: 'Oxygen',     z: 8,  color: 0xff2a2a, mass: 15.999,  cov: 0.66, vdw: 1.52, maxValence: 2, valenceElectrons: 6 },
+      F:  { name: 'Fluorine',   z: 9,  color: 0x90e050, mass: 18.998,  cov: 0.57, vdw: 1.47, maxValence: 1, valenceElectrons: 7 },
+      P:  { name: 'Phosphorus', z: 15, color: 0xff8000, mass: 30.974,  cov: 1.07, vdw: 1.80, maxValence: 5, valenceElectrons: 5 },
+      S:  { name: 'Sulfur',     z: 16, color: 0xffe633, mass: 32.06,   cov: 1.05, vdw: 1.80, maxValence: 6, valenceElectrons: 6 },
+      Cl: { name: 'Chlorine',   z: 17, color: 0x1ff01f, mass: 35.45,   cov: 1.02, vdw: 1.75, maxValence: 1, valenceElectrons: 7 },
+      Br: { name: 'Bromine',    z: 35, color: 0xb03030, mass: 79.904,  cov: 1.20, vdw: 1.85, maxValence: 1, valenceElectrons: 7 },
+      I:  { name: 'Iodine',     z: 53, color: 0x9a1fb0, mass: 126.904, cov: 1.39, vdw: 1.98, maxValence: 1, valenceElectrons: 7 },
+    };
+    const Z_TO_SYMBOL = Object.fromEntries(Object.entries(ELEMENTS).map(([s, e]) => [e.z, s]));
+
+    // Functional groups: atom 0 is the attachment point.
+    const GROUPS = {
+      methyl:    { label: '–CH₃',     name: 'Methyl',    atoms: ['C', 'H', 'H', 'H'], bonds: [[0, 1, 1], [0, 2, 1], [0, 3, 1]] },
+      hydroxyl:  { label: '–OH',      name: 'Hydroxyl',  atoms: ['O', 'H'],           bonds: [[0, 1, 1]] },
+      carboxyl:  { label: '–COOH',    name: 'Carboxyl',  atoms: ['C', 'O', 'O', 'H'], bonds: [[0, 1, 2], [0, 2, 1], [2, 3, 1]] },
+      amino:     { label: '–NH₂',     name: 'Amino',     atoms: ['N', 'H', 'H'],      bonds: [[0, 1, 1], [0, 2, 1]] },
+      phosphate: { label: '–OPO₃H₂',  name: 'Phosphate', atoms: ['O', 'P', 'O', 'O', 'O', 'H', 'H'],
+                   bonds: [[0, 1, 1], [1, 2, 2], [1, 3, 1], [1, 4, 1], [3, 5, 1], [4, 6, 1]] },
+    };
+
+    // Bond physics: multiple bonds are shorter and stiffer.
+    const BOND = {
+      lengthFactor: [0, 1.00, 0.87, 0.78],
+      stiffness:    [0, 1.00, 1.70, 2.40],
+      symbol:       ['', '', '=', '#'],
+      names:        ['', 'single', 'double', 'triple'],
+    };
+
+    const PHYS = {
+      dt: 1 / 240,          // fixed sub-step
+      maxSubsteps: 8,
+      kRepulsion: 1.2,      // Coulomb-like 1/r² between every atom pair
+      repulsionCutoff: 12,
+      kBond: 60,            // Hooke spring constant (single bond)
+      bondDamping: 3,
+      kDomain: 10,          // VSEPR electron-domain repulsion around each centre
+      lonePairWeight: 1.3,  // lone pairs are "fatter" than bonding pairs
+      multiBondWeight: 0.12,
+      kLonePair: 80,
+      lonePairLength: 0.55,
+      friction: 4,
+      lonePairFriction: 10,
+      maxSpeed: 30,
+    };
+
+    // ------------------------------------------------------------------
+    // Three.js setup
+    // ------------------------------------------------------------------
+    const canvas = document.getElementById('scene');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(0, 2, 16);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.minDistance = 3;
+    controls.maxDistance = 80;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
+    controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE };
+
+    scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x1a1d29, 1.1));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(6, 10, 8);
+    scene.add(keyLight);
+    const rimLight = new THREE.DirectionalLight(0x7aa2ff, 0.9);
+    rimLight.position.set(-8, -4, -6);
+    scene.add(rimLight);
+
+    const atomGroup = new THREE.Group();
+    const bondGroup = new THREE.Group();
+    const lonePairGroup = new THREE.Group();
+    scene.add(atomGroup, bondGroup, lonePairGroup);
+
+    const sphereGeo = new THREE.SphereGeometry(1, 32, 24);
+    const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
+    const lonePairGeo = new THREE.SphereGeometry(0.16, 12, 10);
+    const materials = Object.fromEntries(Object.entries(ELEMENTS).map(([s, e]) =>
+      [s, new THREE.MeshStandardMaterial({ color: e.color, roughness: 0.35, metalness: 0.08 })]));
+    const lonePairMat = new THREE.MeshStandardMaterial({ color: 0xff7ad9, transparent: true, opacity: 0.55, roughness: 0.6, depthWrite: false });
+
+    const hoverMarker = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false }));
+    const linkMarker = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.32, depthWrite: false }));
+    hoverMarker.visible = linkMarker.visible = false;
+    scene.add(hoverMarker, linkMarker);
+
+    // ------------------------------------------------------------------
+    // Model
+    // ------------------------------------------------------------------
+    const state = {
+      atoms: [],
+      bonds: [],
+      mode: 'atom',        // 'atom' | 'group'
+      element: 'C',
+      group: 'methyl',
+      order: 1,
+      view: 'ball',        // 'ball' | 'space'
+      showLonePairs: false,
+      linkMode: false,
+      pendingLink: null,
+      hovered: null,
+    };
+    let nextId = 1;
+
+    class LonePair {
+      constructor(parent, pos) {
+        this.parent = parent;
+        this.pos = pos.clone();
+        this.vel = new THREE.Vector3();
+        this.force = new THREE.Vector3();
+        this.invMass = 1 / 0.25;
+        this.mesh = new THREE.Mesh(lonePairGeo, lonePairMat);
+        lonePairGroup.add(this.mesh);
+      }
+      dispose() { lonePairGroup.remove(this.mesh); }
+    }
+
+    class Atom {
+      constructor(el, pos) {
+        this.id = nextId++;
+        this.el = el;
+        this.data = ELEMENTS[el];
+        this.pos = pos.clone();
+        this.vel = new THREE.Vector3();
+        this.force = new THREE.Vector3();
+        this.invMass = 1 / (0.5 + this.data.mass / 24);
+        this.bonds = [];
+        this.lonePairs = [];
+        this.domains = [];
+        this.mesh = new THREE.Mesh(sphereGeo, materials[el]);
+        this.mesh.userData.atom = this;
+        this.mesh.position.copy(pos);
+        atomGroup.add(this.mesh);
+      }
+      bondSum() { return this.bonds.reduce((s, b) => s + b.order, 0); }
+      neighbors() { return this.bonds.map(b => b.other(this)); }
+      bondTo(atom) { return this.bonds.find(b => b.other(this) === atom); }
+      radius() { return state.view === 'ball' ? this.data.vdw * 0.24 : this.data.vdw; }
+      dispose() {
+        atomGroup.remove(this.mesh);
+        this.lonePairs.forEach(lp => lp.dispose());
+      }
+    }
+
+    class Bond {
+      constructor(a, b, order) {
+        this.a = a; this.b = b; this.order = order;
+        this.meshes = [];
+        this.buildMeshes();
+      }
+      other(atom) { return atom === this.a ? this.b : this.a; }
+      restLength() { return (this.a.data.cov + this.b.data.cov) * BOND.lengthFactor[this.order]; }
+      buildMeshes() {
+        this.meshes.forEach(m => bondGroup.remove(m));
+        this.meshes = [];
+        for (let i = 0; i < this.order; i++) {
+          for (const atom of [this.a, this.b]) {
+            const m = new THREE.Mesh(cylinderGeo, materials[atom.el]);
+            bondGroup.add(m);
+            this.meshes.push(m);
+          }
+        }
+      }
+      dispose() { this.meshes.forEach(m => bondGroup.remove(m)); }
+    }
+
+    // Formal charge inferred purely from how many bonds an atom has (e.g. O with one bond → O⁻).
+    function formalCharge(atom) {
+      const bs = atom.bondSum();
+      switch (atom.el) {
+        case 'N': return bs === 4 ? 1 : bs === 2 ? -1 : 0;
+        case 'O': return bs === 1 ? -1 : bs === 3 ? 1 : 0;
+        case 'S': return bs === 1 ? -1 : bs === 3 ? 1 : 0;
+        case 'P': return bs === 4 ? 1 : 0;
+        case 'F': case 'Cl': case 'Br': case 'I': return bs === 0 ? -1 : 0;
+        default: return 0;
+      }
+    }
+
+    function lonePairCount(atom) {
+      const nonBonding = atom.data.valenceElectrons - atom.bondSum() - formalCharge(atom);
+      return Math.max(0, Math.floor(nonBonding / 2));
+    }
+
+    function createAtom(el, pos) {
+      const atom = new Atom(el, pos);
+      state.atoms.push(atom);
+      return atom;
+    }
+
+    function createBond(a, b, order) {
+      const bond = new Bond(a, b, order);
+      a.bonds.push(bond); b.bonds.push(bond);
+      state.bonds.push(bond);
+      return bond;
+    }
+
+    function removeBond(bond) {
+      bond.dispose();
+      bond.a.bonds = bond.a.bonds.filter(x => x !== bond);
+      bond.b.bonds = bond.b.bonds.filter(x => x !== bond);
+      state.bonds = state.bonds.filter(x => x !== bond);
+    }
+
+    function deleteAtom(atom) {
+      [...atom.bonds].forEach(removeBond);
+      atom.dispose();
+      state.atoms = state.atoms.filter(a => a !== atom);
+      if (state.pendingLink === atom) state.pendingLink = null;
+      if (state.hovered === atom) state.hovered = null;
+      topologyChanged();
+    }
+
+    function clearScene() {
+      state.bonds.forEach(b => b.dispose());
+      state.atoms.forEach(a => a.dispose());
+      state.atoms = []; state.bonds = [];
+      state.pendingLink = null; state.hovered = null;
+      topologyChanged();
+    }
+
+    function randomUnit() {
+      return new THREE.Vector3().randomDirection();
+    }
+
+    // Direction pointing away from an atom's existing electron domains (where a new bond should go).
+    function freeDirection(atom) {
+      const sum = new THREE.Vector3();
+      for (const d of atom.domains) sum.add(new THREE.Vector3().subVectors(d.p.pos, atom.pos).normalize());
+      if (!atom.domains.length) for (const n of atom.neighbors()) sum.add(new THREE.Vector3().subVectors(n.pos, atom.pos).normalize());
+      if (sum.lengthSq() < 1e-4) return randomUnit();
+      return sum.negate().normalize().addScaledVector(randomUnit(), 0.35).normalize();
+    }
+
+    // Rebuild lone pairs & VSEPR electron-domain lists after any bond/atom change.
+    function topologyChanged() {
+      for (const atom of state.atoms) {
+        const want = atom.bonds.length ? lonePairCount(atom) : 0;
+        while (atom.lonePairs.length > want) atom.lonePairs.pop().dispose();
+        while (atom.lonePairs.length < want) {
+          const dir = freeDirection(atom).addScaledVector(randomUnit(), 0.6).normalize();
+          atom.lonePairs.push(new LonePair(atom, atom.pos.clone().addScaledVector(dir, PHYS.lonePairLength)));
+        }
+        atom.domains = [
+          ...atom.bonds.map(b => ({ p: b.other(atom), w: 1 + PHYS.multiBondWeight * (b.order - 1) })),
+          ...atom.lonePairs.map(lp => ({ p: lp, w: PHYS.lonePairWeight })),
+        ];
+      }
+      updateStats();
+    }
+
+    // ------------------------------------------------------------------
+    // Physics: Coulomb repulsion + Hooke springs + VSEPR domain repulsion
+    // ------------------------------------------------------------------
+    const _u = [], _g = [];
+    const _t = new THREE.Vector3(), _d = new THREE.Vector3(), _dv = new THREE.Vector3();
+
+    function physicsStep(dt) {
+      const atoms = state.atoms;
+      const n = atoms.length;
+      for (const a of atoms) {
+        a.force.set(0, 0, 0);
+        for (const lp of a.lonePairs) lp.force.set(0, 0, 0);
+      }
+
+      // 1. Inverse-square repulsion between every pair of atoms.
+      const cut2 = PHYS.repulsionCutoff * PHYS.repulsionCutoff;
+      for (let i = 0; i < n; i++) {
+        const A = atoms[i], pa = A.pos;
+        for (let j = i + 1; j < n; j++) {
+          const B = atoms[j], pb = B.pos;
+          let dx = pa.x - pb.x, dy = pa.y - pb.y, dz = pa.z - pb.z;
+          let r2 = dx * dx + dy * dy + dz * dz;
+          if (r2 > cut2) continue;
+          if (r2 < 1e-8) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5; r2 = dx * dx + dy * dy + dz * dz; }
+          const r = Math.sqrt(r2);
+          const f = PHYS.kRepulsion / (r2 + 0.05) / r;
+          A.force.x += dx * f; A.force.y += dy * f; A.force.z += dz * f;
+          B.force.x -= dx * f; B.force.y -= dy * f; B.force.z -= dz * f;
+        }
+      }
+
+      // 2. Bonds as damped Hooke springs (shorter + stiffer for higher order).
+      for (const bond of state.bonds) {
+        const A = bond.a, B = bond.b;
+        _d.subVectors(B.pos, A.pos);
+        let r = _d.length();
+        if (r < 1e-6) { _d.copy(randomUnit()).multiplyScalar(0.01); r = 0.01; }
+        _d.divideScalar(r);
+        const k = PHYS.kBond * BOND.stiffness[bond.order];
+        _dv.subVectors(B.vel, A.vel);
+        const f = k * (r - bond.restLength()) + PHYS.bondDamping * _dv.dot(_d);
+        A.force.addScaledVector(_d, f);
+        B.force.addScaledVector(_d, -f);
+      }
+
+      // 3. VSEPR: electron domains (bonded neighbours + lone pairs) around each centre
+      //    repel each other with an inverse-square law on the unit sphere. Only the
+      //    tangential part is applied so bond lengths stay governed by the springs.
+      for (const c of atoms) {
+        const D = c.domains, m = D.length;
+        if (m < 2) continue;
+        while (_u.length < m) { _u.push(new THREE.Vector3()); _g.push(new THREE.Vector3()); }
+        for (let k = 0; k < m; k++) {
+          _u[k].subVectors(D[k].p.pos, c.pos);
+          const len = _u[k].length();
+          if (len < 1e-6) _u[k].copy(randomUnit()); else _u[k].divideScalar(len);
+          _g[k].set(0, 0, 0);
+        }
+        for (let i = 0; i < m; i++) {
+          for (let j = i + 1; j < m; j++) {
+            _t.subVectors(_u[i], _u[j]);
+            const dist = Math.max(_t.length(), 0.15);
+            const mag = PHYS.kDomain * D[i].w * D[j].w / (dist * dist * dist);
+            _g[i].addScaledVector(_t, mag);
+            _g[j].addScaledVector(_t, -mag);
+          }
+        }
+        for (let k = 0; k < m; k++) {
+          _t.copy(_g[k]).addScaledVector(_u[k], -_g[k].dot(_u[k]));
+          D[k].p.force.add(_t);
+          c.force.sub(_t);
+        }
+      }
+
+      // 4. Lone pairs are tethered to their parent atom.
+      for (const a of atoms) {
+        for (const lp of a.lonePairs) {
+          _d.subVectors(lp.pos, a.pos);
+          let r = _d.length();
+          if (r < 1e-6) { _d.copy(randomUnit()); r = 1; } else _d.divideScalar(r);
+          const f = -PHYS.kLonePair * (r - PHYS.lonePairLength);
+          lp.force.addScaledVector(_d, f);
+          a.force.addScaledVector(_d, -f);
+        }
+      }
+
+      // 5. Integrate (semi-implicit Euler with friction and a speed cap).
+      const damp = Math.exp(-PHYS.friction * dt);
+      const lpDamp = Math.exp(-PHYS.lonePairFriction * dt);
+      const integrate = (p, d) => {
+        p.vel.addScaledVector(p.force, p.invMass * dt).multiplyScalar(d);
+        const s2 = p.vel.lengthSq();
+        if (s2 > PHYS.maxSpeed * PHYS.maxSpeed) p.vel.multiplyScalar(PHYS.maxSpeed / Math.sqrt(s2));
+        p.pos.addScaledVector(p.vel, dt);
+      };
+      for (const a of atoms) {
+        integrate(a, damp);
+        for (const lp of a.lonePairs) integrate(lp, lpDamp);
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Rendering sync
+    // ------------------------------------------------------------------
+    const Y_AXIS = new THREE.Vector3(0, 1, 0);
+    const _q = new THREE.Quaternion(), _perp = new THREE.Vector3(), _dir = new THREE.Vector3();
+    const _s = new THREE.Vector3(), _mid = new THREE.Vector3(), _off = new THREE.Vector3();
+
+    function bondPerpendicular(bond, dir) {
+      // Prefer the plane of a neighbouring atom so double bonds look like they lie in the molecular plane.
+      for (const [atom, skip] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+        for (const n of atom.neighbors()) {
+          if (n === skip) continue;
+          _perp.subVectors(n.pos, atom.pos);
+          _perp.addScaledVector(dir, -_perp.dot(dir));
+          if (_perp.lengthSq() > 1e-4) return _perp.normalize();
+        }
+      }
+      _perp.crossVectors(dir, camera.getWorldDirection(_s));
+      if (_perp.lengthSq() < 1e-4) _perp.crossVectors(dir, Y_AXIS);
+      return _perp.normalize();
+    }
+
+    function syncMeshes() {
+      const ball = state.view === 'ball';
+      for (const a of state.atoms) {
+        a.mesh.position.copy(a.pos);
+        a.mesh.scale.setScalar(a.radius());
+        for (const lp of a.lonePairs) {
+          lp.mesh.position.copy(lp.pos);
+          lp.mesh.visible = state.showLonePairs && ball;
+        }
+      }
+      bondGroup.visible = ball;
+      if (ball) {
+        for (const bond of state.bonds) {
+          _dir.subVectors(bond.b.pos, bond.a.pos);
+          const len = _dir.length();
+          if (len < 1e-6) continue;
+          _dir.divideScalar(len);
+          _q.setFromUnitVectors(Y_AXIS, _dir);
+          const perp = bond.order > 1 ? bondPerpendicular(bond, _dir) : null;
+          const radius = bond.order === 1 ? 0.1 : 0.065;
+          const spacing = 0.16;
+          for (let i = 0; i < bond.order; i++) {
+            const offset = (i - (bond.order - 1) / 2) * spacing;
+            _off.set(0, 0, 0);
+            if (perp) _off.copy(perp).multiplyScalar(offset);
+            for (let h = 0; h < 2; h++) {
+              const mesh = bond.meshes[i * 2 + h];
+              _mid.copy(bond.a.pos).addScaledVector(_dir, len * (h === 0 ? 0.25 : 0.75)).add(_off);
+              mesh.position.copy(_mid);
+              mesh.quaternion.copy(_q);
+              mesh.scale.set(radius, len / 2, radius);
+            }
+          }
+        }
+      }
+      const hov = state.hovered;
+      hoverMarker.visible = !!hov;
+      if (hov) { hoverMarker.position.copy(hov.pos); hoverMarker.scale.setScalar(hov.radius() * 1.35 + 0.05); }
+      const pl = state.pendingLink;
+      linkMarker.visible = !!pl;
+      if (pl) { linkMarker.position.copy(pl.pos); linkMarker.scale.setScalar(pl.radius() * 1.55 + 0.08); }
+    }
+
+    // ------------------------------------------------------------------
+    // Building actions
+    // ------------------------------------------------------------------
+    function freeValence(atom) { return atom.data.maxValence - atom.bondSum(); }
+
+    function checkCanBond(atom, order) {
+      if (freeValence(atom) >= order) return true;
+      if (atom.data.maxValence < order) toast(`${atom.data.name} can't form a ${BOND.names[order]} bond.`, 'warn');
+      else toast(`${atom.data.name} has reached its maximum valence (${atom.data.maxValence}).`, 'warn');
+      return false;
+    }
+
+    // Spawns a single atom or a functional group. If `anchor` is given the new piece is bonded to it.
+    function spawnPiece(anchor, freePos) {
+      const order = state.order;
+      let spec;
+      if (state.mode === 'group') {
+        const g = GROUPS[state.group];
+        spec = { atoms: g.atoms, bonds: g.bonds, label: `${g.name} group` };
+      } else {
+        spec = { atoms: [state.element], bonds: [], label: ELEMENTS[state.element].name };
+      }
+
+      if (anchor) {
+        if (!checkCanBond(anchor, order)) return false;
+        const head = ELEMENTS[spec.atoms[0]];
+        const headUsed = spec.bonds.reduce((s, [i, j, o]) => s + (i === 0 || j === 0 ? o : 0), 0);
+        if (head.maxValence - headUsed < order) {
+          toast(head.maxValence < order
+            ? `${head.name} can't form a ${BOND.names[order]} bond.`
+            : `The ${spec.label} only has ${head.maxValence - headUsed} free valence — try a single bond.`, 'warn');
+          return false;
+        }
+      }
+
+      // Place the head atom.
+      let headPos, outward;
+      if (anchor) {
+        outward = freeDirection(anchor);
+        const rest = (anchor.data.cov + ELEMENTS[spec.atoms[0]].cov) * BOND.lengthFactor[order];
+        headPos = anchor.pos.clone().addScaledVector(outward, rest);
+      } else {
+        headPos = freePos.clone();
+        outward = randomUnit();
+      }
+      const created = [createAtom(spec.atoms[0], headPos)];
+      const placed = [true];
+      const dirOf = [outward];
+      // Breadth-first placement of the rest of the group, growing outward.
+      const queue = [0];
+      while (queue.length) {
+        const i = queue.shift();
+        for (const [x, y, o] of spec.bonds) {
+          const j = x === i ? y : y === i ? x : -1;
+          if (j < 0 || placed[j]) continue;
+          const dir = dirOf[i].clone().addScaledVector(randomUnit(), 0.9).normalize();
+          const rest = (ELEMENTS[spec.atoms[i]].cov + ELEMENTS[spec.atoms[j]].cov) * BOND.lengthFactor[o];
+          created[j] = createAtom(spec.atoms[j], created[i].pos.clone().addScaledVector(dir, rest));
+          placed[j] = true; dirOf[j] = dir;
+          queue.push(j);
+        }
+      }
+      for (const [i, j, o] of spec.bonds) createBond(created[i], created[j], o);
+      if (anchor) createBond(anchor, created[0], order);
+      topologyChanged();
+      return true;
+    }
+
+    function linkAtoms(a, b) {
+      if (a === b) return;
+      const order = state.order;
+      const existing = a.bondTo(b);
+      if (existing) {
+        if (existing.order === order) { toast(`Already a ${BOND.names[order]} bond.`); return; }
+        const delta = order - existing.order;
+        for (const atom of [a, b]) {
+          if (delta > 0 && freeValence(atom) < delta) {
+            toast(`${atom.data.name} has reached its maximum valence (${atom.data.maxValence}).`, 'warn');
+            return;
+          }
+        }
+        existing.order = order;
+        existing.buildMeshes();
+        toast(`Bond changed to ${BOND.names[order]}.`, 'ok');
+      } else {
+        if (!checkCanBond(a, order) || !checkCanBond(b, order)) return;
+        createBond(a, b, order);
+      }
+      topologyChanged();
+    }
+
+    // Saturates every atom's remaining "normal" valence with hydrogens.
+    function fillHydrogens() {
+      const typical = { C: [4], N: [3], O: [2], F: [1], Cl: [1], Br: [1], I: [1], P: [3, 5], S: [2, 4, 6], H: [1] };
+      let added = 0;
+      for (const atom of [...state.atoms]) {
+        if (atom.el === 'H') continue;
+        const bs = atom.bondSum();
+        const target = typical[atom.el].find(v => v >= bs) ?? bs;
+        for (let i = 0; i < target - bs; i++) {
+          // Recompute domains so successive hydrogens spread out.
+          topologyChanged();
+          const dir = freeDirection(atom);
+          const h = createAtom('H', atom.pos.clone().addScaledVector(dir, atom.data.cov + ELEMENTS.H.cov));
+          createBond(atom, h, 1);
+          added++;
+        }
+      }
+      topologyChanged();
+      toast(added ? `Added ${added} hydrogen${added > 1 ? 's' : ''}.` : 'Every atom is already saturated.', added ? 'ok' : 'info');
+    }
+
+    // ------------------------------------------------------------------
+    // SMILES generation (graph traversal with bracket atoms, ring closures, charges)
+    // ------------------------------------------------------------------
+    function generateSMILES() {
+      if (!state.atoms.length) throw new Error('Scene is empty');
+      // Hydrogens singly bonded to a heavy atom are folded into the bracket H-count.
+      const isImplicitH = a => a.el === 'H' && a.bonds.length === 1 && a.bonds[0].order === 1 && a.bonds[0].other(a).el !== 'H';
+      const heavy = state.atoms.filter(a => !isImplicitH(a));
+      const hCount = new Map(heavy.map(a => [a, a.neighbors().filter(isImplicitH).length]));
+      const graphBonds = a => a.bonds.filter(b => !isImplicitH(b.other(a)));
+
+      const visited = new Set();
+      const children = new Map();   // atom -> [{atom, bond}]
+      const ringBonds = new Map();  // atom -> [bond]
+      const treeBonds = new Set(), ringSet = new Set();
+
+      function dfs(atom, parentBond) {
+        visited.add(atom);
+        children.set(atom, []);
+        if (!ringBonds.has(atom)) ringBonds.set(atom, []);
+        // Visit low-degree branches first so the main chain tends to come last (fewer parentheses).
+        const bonds = graphBonds(atom).filter(b => b !== parentBond)
+          .sort((x, y) => graphBonds(x.other(atom)).length - graphBonds(y.other(atom)).length);
+        for (const b of bonds) {
+          const nb = b.other(atom);
+          if (!visited.has(nb)) {
+            treeBonds.add(b);
+            children.get(atom).push({ atom: nb, bond: b });
+            dfs(nb, b);
+          } else if (!treeBonds.has(b) && !ringSet.has(b)) {
+            ringSet.add(b);   // back edge → ring closure
+            ringBonds.get(atom).push(b);
+            ringBonds.get(nb).push(b);
+          }
+        }
+      }
+
+      function token(atom) {
+        const h = hCount.get(atom);
+        const q = formalCharge(atom);
+        const hs = h ? 'H' + (h > 1 ? h : '') : '';
+        const qs = q === 0 ? '' : (q > 0 ? '+' : '-') + (Math.abs(q) > 1 ? Math.abs(q) : '');
+        return `[${atom.el}${hs}${qs}]`;
+      }
+
+      const ringNumber = new Map();
+      const inUse = new Set();
+      const fmtRing = n => n < 10 ? String(n) : '%' + n;
+      function write(atom) {
+        let s = token(atom);
+        for (const b of ringBonds.get(atom)) {
+          if (ringNumber.has(b)) {          // closing
+            const num = ringNumber.get(b);
+            s += BOND.symbol[b.order] + fmtRing(num);
+            inUse.delete(num);
+          } else {                           // opening
+            let num = 1;
+            while (inUse.has(num)) num++;
+            inUse.add(num);
+            ringNumber.set(b, num);
+            s += BOND.symbol[b.order] + fmtRing(num);
+          }
+        }
+        const kids = children.get(atom);
+        kids.forEach((k, i) => {
+          const sub = BOND.symbol[k.bond.order] + write(k.atom);
+          s += i < kids.length - 1 ? `(${sub})` : sub;
+        });
+        return s;
+      }
+
+      const fragments = [];
+      for (const start of heavy) {
+        if (visited.has(start)) continue;
+        // Collect the component and start from a terminal atom for a tidier string.
+        const comp = [start], seen = new Set([start]);
+        for (let i = 0; i < comp.length; i++) {
+          for (const b of graphBonds(comp[i])) {
+            const nb = b.other(comp[i]);
+            if (!seen.has(nb)) { seen.add(nb); comp.push(nb); }
+          }
+        }
+        const root = comp.reduce((best, a) => graphBonds(a).length < graphBonds(best).length ? a : best, comp[0]);
+        dfs(root, null);
+        fragments.push(write(root));
+      }
+      return fragments.join('.');
+    }
+
+    // ------------------------------------------------------------------
+    // PubChem
+    // ------------------------------------------------------------------
+    const PUBCHEM = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug';
+
+    async function fetchCompoundRecord(name) {
+      const base = `${PUBCHEM}/compound/name/${encodeURIComponent(name)}/JSON`;
+      // Prefer the 3D conformer (keeps stereochemistry); fall back to the 2D depiction.
+      try {
+        const r = await fetch(base + '?record_type=3d');
+        if (r.ok) return await r.json();
+      } catch (_) { /* fall through */ }
+      const r = await fetch(base);
+      if (!r.ok) throw new Error(r.status === 404 ? `No compound named "${name}" found.` : `PubChem error (${r.status}).`);
+      return r.json();
+    }
+
+    async function importByName(name) {
+      const data = await fetchCompoundRecord(name);
+      const c = data?.PC_Compounds?.[0];
+      if (!c?.atoms?.aid) throw new Error('PubChem returned no structure.');
+      const aids = c.atoms.aid, elems = c.atoms.element;
+      if (aids.length > 400) throw new Error(`Too large (${aids.length} atoms).`);
+      const unsupported = [...new Set(elems.filter(z => !Z_TO_SYMBOL[z]))];
+      if (unsupported.length) throw new Error(`Contains unsupported element(s) (Z = ${unsupported.join(', ')}).`);
+
+      const coordSet = c.coords?.[0];
+      const conf = coordSet?.conformers?.[0];
+      const coordIndex = new Map((coordSet?.aid || []).map((aid, i) => [aid, i]));
+      const raw = aids.map(aid => {
+        const i = coordIndex.get(aid);
+        if (!conf || i === undefined) return randomUnit();
+        return new THREE.Vector3(conf.x[i], conf.y[i], conf.z ? conf.z[i] : 0);
+      });
+      const center = raw.reduce((s, v) => s.add(v), new THREE.Vector3()).divideScalar(raw.length || 1);
+
+      clearScene();
+      controls.target.set(0, 0, 0);
+      // Clump everything tightly at the origin (with jitter to break planarity) — physics does the rest.
+      const clump = 0.3;
+      const byAid = new Map();
+      aids.forEach((aid, i) => {
+        const p = raw[i].sub(center).multiplyScalar(clump).add(randomUnit().multiplyScalar(0.12));
+        byAid.set(aid, createAtom(Z_TO_SYMBOL[elems[i]], p));
+      });
+      const bonds = c.bonds || { aid1: [], aid2: [], order: [] };
+      bonds.aid1.forEach((a1, i) => {
+        const A = byAid.get(a1), B = byAid.get(bonds.aid2[i]);
+        if (A && B && A !== B && !A.bondTo(B)) {
+          const order = Math.min(3, Math.max(1, (bonds.order && bonds.order[i]) || 1));
+          createBond(A, B, order);
+        }
+      });
+      topologyChanged();
+      return aids.length;
+    }
+
+    async function lookupName(smiles) {
+      const res = await fetch(`${PUBCHEM}/compound/smiles/property/Title,IUPACName/JSON`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'smiles=' + encodeURIComponent(smiles),
+      });
+      if (!res.ok) throw new Error(`PubChem error ${res.status}`);
+      const data = await res.json();
+      const p = data?.PropertyTable?.Properties?.[0];
+      if (!p || !p.CID || !(p.Title || p.IUPACName)) throw new Error('Unrecognized structure');
+      return p;
+    }
+
+    // ------------------------------------------------------------------
+    // UI helpers
+    // ------------------------------------------------------------------
+    const toastEl = document.getElementById('toast');
+    let toastTimer = null;
+    function toast(msg, kind = 'info') {
+      const colors = { info: 'text-slate-100', warn: 'text-amber-200', error: 'text-rose-200', ok: 'text-emerald-200' };
+      toastEl.className = `glass fixed left-1/2 top-5 z-50 px-4 py-2 rounded-lg text-sm font-medium ${colors[kind] || colors.info}`;
+      toastEl.style.transform = 'translateX(-50%)';
+      toastEl.textContent = msg;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.add('hidden-toast'), 2600);
+    }
+
+    function formulaString() {
+      const counts = {};
+      for (const a of state.atoms) counts[a.el] = (counts[a.el] || 0) + 1;
+      const keys = Object.keys(counts);
+      const order = counts.C
+        ? ['C', 'H', ...keys.filter(k => k !== 'C' && k !== 'H').sort()].filter(k => counts[k])
+        : keys.sort();
+      const sub = n => String(n).replace(/\d/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]);
+      return order.map(k => k + (counts[k] > 1 ? sub(counts[k]) : '')).join('');
+    }
+
+    function updateStats() {
+      document.getElementById('stats').textContent = `${state.atoms.length} atoms · ${state.bonds.length} bonds`;
+      document.getElementById('formula').textContent = formulaString();
+      document.getElementById('hint').style.display = state.atoms.length ? 'none' : 'flex';
+    }
+
+    function chipClass(active) {
+      return `chip px-2.5 py-1 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 ${active ? 'active' : ''}`;
+    }
+
+    function renderToolbox() {
+      const atomBox = document.getElementById('atom-buttons');
+      atomBox.innerHTML = '';
+      for (const [sym, e] of Object.entries(ELEMENTS)) {
+        const btn = document.createElement('button');
+        btn.className = chipClass(state.mode === 'atom' && state.element === sym) + ' flex items-center gap-1.5 font-semibold';
+        btn.title = `${e.name} (max valence ${e.maxValence})`;
+        btn.innerHTML = `<span class="w-3 h-3 rounded-full inline-block ring-1 ring-white/30" style="background:#${e.color.toString(16).padStart(6, '0')}"></span>${sym}`;
+        btn.onclick = () => { state.mode = 'atom'; state.element = sym; renderToolbox(); };
+        atomBox.appendChild(btn);
+      }
+      const groupBox = document.getElementById('group-buttons');
+      groupBox.innerHTML = '';
+      for (const [key, g] of Object.entries(GROUPS)) {
+        const btn = document.createElement('button');
+        btn.className = chipClass(state.mode === 'group' && state.group === key);
+        btn.title = `${g.name} group`;
+        btn.innerHTML = `<span class="font-semibold">${g.label}</span> <span class="text-slate-400 text-xs hidden sm:inline">${g.name}</span>`;
+        btn.onclick = () => { state.mode = 'group'; state.group = key; renderToolbox(); };
+        groupBox.appendChild(btn);
+      }
+      const bondBox = document.getElementById('bond-buttons');
+      bondBox.innerHTML = '';
+      [[1, '— Single'], [2, '= Double'], [3, '≡ Triple']].forEach(([o, label]) => {
+        const btn = document.createElement('button');
+        btn.className = chipClass(state.order === o);
+        btn.textContent = label;
+        btn.onclick = () => { state.order = o; renderToolbox(); };
+        bondBox.appendChild(btn);
+      });
+      document.getElementById('link-btn').className = chipClass(state.linkMode) + ' ml-auto';
+      const what = state.mode === 'atom' ? ELEMENTS[state.element].name : `${GROUPS[state.group].name} group`;
+      document.getElementById('current-label').textContent = `· placing ${what}, ${BOND.names[state.order]} bond`;
+    }
+
+    // Draggable + collapsible panels
+    let topZ = 20;
+    function makePanel(panel) {
+      const header = panel.querySelector('.panel-header');
+      let start = null;
+      header.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        const r = panel.getBoundingClientRect();
+        start = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, moved: false };
+        panel.style.zIndex = ++topZ;
+        header.setPointerCapture(e.pointerId);
+      });
+      header.addEventListener('pointermove', e => {
+        if (!start) return;
+        const dx = e.clientX - start.x, dy = e.clientY - start.y;
+        if (!start.moved && Math.hypot(dx, dy) < 4) return;
+        start.moved = true;
+        const r = panel.getBoundingClientRect();
+        const left = Math.min(Math.max(0, start.left + dx), window.innerWidth - r.width);
+        const top = Math.min(Math.max(0, start.top + dy), window.innerHeight - 40);
+        Object.assign(panel.style, { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto', transform: 'none' });
+      });
+      header.addEventListener('pointerup', () => {
+        if (start && !start.moved) panel.classList.toggle('collapsed');
+        start = null;
+      });
+      header.addEventListener('pointercancel', () => { start = null; });
+    }
+    document.querySelectorAll('.panel').forEach(makePanel);
+    if (window.innerWidth < 700) {
+      document.getElementById('panel-instructions').classList.add('collapsed');
+      const actions = document.getElementById('panel-actions');
+      actions.classList.add('collapsed');
+      actions.style.top = '72px';
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      // Keep dragged panels on-screen.
+      document.querySelectorAll('.panel').forEach(p => {
+        if (p.style.transform !== 'none') return;
+        const r = p.getBoundingClientRect();
+        p.style.left = Math.min(Math.max(0, r.left), Math.max(0, window.innerWidth - r.width)) + 'px';
+        p.style.top = Math.min(Math.max(0, r.top), Math.max(0, window.innerHeight - 40)) + 'px';
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Pointer interaction on the 3D canvas
+    // ------------------------------------------------------------------
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+
+    function pickAtom(clientX, clientY) {
+      ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      const hit = raycaster.intersectObjects(atomGroup.children, false)[0];
+      return hit ? hit.object.userData.atom : null;
+    }
+
+    function spawnPointInSpace(clientX, clientY) {
+      ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      const dist = camera.position.distanceTo(controls.target);
+      return raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, dist);
+    }
+
+    function handleLeftClick(x, y, shift) {
+      const atom = pickAtom(x, y);
+      if (shift || state.linkMode) {
+        if (!atom) { state.pendingLink = null; return; }
+        if (!state.pendingLink) { state.pendingLink = atom; toast('Select a second atom to bond to.'); return; }
+        linkAtoms(state.pendingLink, atom);
+        state.pendingLink = null;
+        return;
+      }
+      state.pendingLink = null;
+      if (atom) spawnPiece(atom, null);
+      else spawnPiece(null, spawnPointInSpace(x, y));
+    }
+
+    function handleDelete(x, y) {
+      const atom = pickAtom(x, y);
+      if (atom) deleteAtom(atom);
+    }
+
+    let press = null;
+    canvas.addEventListener('pointerdown', e => {
+      press = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button, id: e.pointerId, longFired: false, timer: null };
+      if (e.pointerType === 'touch') {
+        const p = press;
+        p.timer = setTimeout(() => {
+          if (pickAtom(p.x, p.y)) { p.longFired = true; handleDelete(p.x, p.y); }
+        }, 550);
+      }
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (press && press.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) clearTimeout(press.timer);
+      if (e.pointerType !== 'touch') state.hovered = pickAtom(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('pointerleave', () => { state.hovered = null; });
+    canvas.addEventListener('pointerup', e => {
+      if (!press || press.id !== e.pointerId) return;
+      const p = press; press = null;
+      clearTimeout(p.timer);
+      if (p.longFired) return;
+      const moved = Math.hypot(e.clientX - p.x, e.clientY - p.y);
+      if (moved > 6 || performance.now() - p.t > 500) return;  // was a camera drag
+      if (p.button === 2) handleDelete(e.clientX, e.clientY);
+      else if (p.button === 0) handleLeftClick(e.clientX, e.clientY, e.shiftKey);
+    });
+    window.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    document.addEventListener('gesturestart', e => e.preventDefault());
+
+    window.addEventListener('keydown', e => {
+      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      const keyMap = { c: 'C', h: 'H', o: 'O', n: 'N', f: 'F', p: 'P', s: 'S', l: 'Cl', b: 'Br', i: 'I' };
+      const k = e.key.toLowerCase();
+      if (keyMap[k]) { state.mode = 'atom'; state.element = keyMap[k]; renderToolbox(); }
+      else if (['1', '2', '3'].includes(k)) { state.order = +k; renderToolbox(); }
+      else if (k === 'v') toggleView();
+      else if (k === 'escape') { state.pendingLink = null; state.linkMode = false; renderToolbox(); }
+    });
+
+    // ------------------------------------------------------------------
+    // Action panel wiring
+    // ------------------------------------------------------------------
+    const viewBtn = document.getElementById('view-btn');
+    function toggleView() {
+      state.view = state.view === 'ball' ? 'space' : 'ball';
+      viewBtn.textContent = state.view === 'ball' ? '● Ball & Stick' : '⬤ Space-Filling';
+    }
+    viewBtn.onclick = toggleView;
+    document.getElementById('lp-toggle').onchange = e => { state.showLonePairs = e.target.checked; };
+    document.getElementById('link-btn').onclick = () => {
+      state.linkMode = !state.linkMode; state.pendingLink = null; renderToolbox();
+      if (state.linkMode) toast('Link mode: click two atoms to bond them.');
+    };
+    document.getElementById('clear-btn').onclick = () => {
+      clearScene();
+      document.getElementById('name-result').classList.add('hidden');
+    };
+    document.getElementById('fillh-btn').onclick = fillHydrogens;
+
+    const importBtn = document.getElementById('import-btn');
+    document.getElementById('import-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const input = document.getElementById('import-name');
+      const name = input.value.trim();
+      if (!name) return;
+      importBtn.disabled = true;
+      importBtn.innerHTML = '<span class="spinner"></span>';
+      try {
+        const n = await importByName(name);
+        toast(`Imported ${name} (${n} atoms).`, 'ok');
+        input.blur();
+      } catch (err) {
+        toast(err?.message || 'Import failed.', 'error');
+      } finally {
+        importBtn.disabled = false;
+        importBtn.textContent = 'Import';
+      }
+    });
+
+    const nameBtn = document.getElementById('name-btn');
+    nameBtn.onclick = async () => {
+      const box = document.getElementById('name-result');
+      const title = document.getElementById('name-title');
+      const iupac = document.getElementById('name-iupac');
+      const smilesEl = document.getElementById('name-smiles');
+      if (!state.atoms.length) { toast('Build a molecule first.', 'warn'); return; }
+      nameBtn.disabled = true;
+      nameBtn.innerHTML = '<span class="spinner"></span>';
+      box.classList.remove('hidden');
+      let smiles = '';
+      try {
+        smiles = generateSMILES();
+        smilesEl.textContent = smiles;
+        title.textContent = 'Looking up…'; iupac.textContent = '';
+        const p = await lookupName(smiles);
+        title.textContent = p.Title || p.IUPACName;
+        iupac.textContent = p.IUPACName && p.IUPACName !== p.Title ? `IUPAC: ${p.IUPACName}` : '';
+      } catch (err) {
+        title.textContent = 'Try again.';
+        iupac.textContent = 'Structure not recognized — check valences or try "Add Hydrogens".';
+        smilesEl.textContent = smiles;
+      } finally {
+        nameBtn.disabled = false;
+        nameBtn.textContent = 'Get Molecule Name';
+      }
+    };
+
+    // ------------------------------------------------------------------
+    // Main loop
+    // ------------------------------------------------------------------
+    const clock = new THREE.Clock();
+    let accumulator = 0;
+    function animate() {
+      accumulator = Math.min(accumulator + clock.getDelta(), PHYS.dt * PHYS.maxSubsteps);
+      while (accumulator >= PHYS.dt) { physicsStep(PHYS.dt); accumulator -= PHYS.dt; }
+      syncMeshes();
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    renderToolbox();
+    updateStats();
+    animate();
+
+    // Small debugging / scripting hook.
+    window.chemLego = { THREE, state, ELEMENTS, PHYS, createAtom, createBond, deleteAtom, clearScene, spawnPiece,
+                        physicsStep, generateSMILES, importByName, topologyChanged, fillHydrogens };
+  </script>
+</body>
+</html>
