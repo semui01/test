@@ -1092,7 +1092,7 @@
         toast(`Imported ${name} (${n} atoms).`, 'ok');
         input.blur();
       } catch (err) {
-        toast(err?.message || 'Import failed.', 'error');
+        toast(err instanceof TypeError ? "Couldn't reach PubChem from this page. Open index.html directly in a browser to import." : (err?.message || 'Import failed.'), 'error');
       } finally {
         importBtn.disabled = false;
         importBtn.textContent = 'Import';
