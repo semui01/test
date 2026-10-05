@@ -949,7 +949,7 @@
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'smiles=' + encodeURIComponent(smiles),
       });
-      if (!res.ok) throw new Error(`PubChem error ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(`PubChem error ${res.status}`), { status: res.status });
       const data = await res.json();
       const p = data?.PropertyTable?.Properties?.[0];
       if (!p || !p.CID || !(p.Title || p.IUPACName)) throw new Error('Unrecognized structure');
@@ -1193,6 +1193,14 @@
       }
     });
 
+    // PubChem answers 400/404 for SMILES it can't parse or doesn't know, and 503 when overloaded.
+    function describeLookupError(err) {
+      if (err instanceof TypeError) return "Couldn't reach PubChem. Check your connection and try again.";
+      if (err?.status === 503) return 'PubChem is busy right now. Wait a few seconds and try again.';
+      if (err?.status && err.status !== 400 && err.status !== 404) return `PubChem returned an error (${err.status}). Try again in a moment.`;
+      return 'Structure not recognized — check valences or try "Add Hydrogens".';
+    }
+
     const nameBtn = document.getElementById('name-btn');
     nameBtn.onclick = async () => {
       const box = document.getElementById('name-result');
@@ -1213,7 +1221,7 @@
         iupac.textContent = p.IUPACName && p.IUPACName !== p.Title ? `IUPAC: ${p.IUPACName}` : '';
       } catch (err) {
         title.textContent = 'Try again.';
-        iupac.textContent = 'Structure not recognized — check valences or try "Add Hydrogens".';
+        iupac.textContent = describeLookupError(err);
         smilesEl.textContent = smiles;
       } finally {
         nameBtn.disabled = false;
