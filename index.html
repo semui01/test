@@ -207,6 +207,7 @@
       lonePairWeight: 1.3,  // lone pairs are "fatter" than bonding pairs
       multiBondWeight: 0.12,
       kLonePair: 80,
+      kTorsion: 12,         // dihedral stiffness of double bonds (keeps them planar)
       lonePairLength: 0.55,
       friction: 4,
       lonePairFriction: 10,
@@ -266,6 +267,7 @@
     const state = {
       atoms: [],
       bonds: [],
+      planarBonds: [],
       mode: 'atom',        // 'atom' | 'group'
       element: 'C',
       group: 'methyl',
@@ -422,6 +424,7 @@
           ...atom.lonePairs.map(lp => ({ p: lp, w: PHYS.lonePairWeight })),
         ];
       }
+      assignTorsions();
       updateStats();
     }
 
@@ -430,6 +433,90 @@
     // ------------------------------------------------------------------
     const _u = [], _g = [];
     const _t = new THREE.Vector3(), _d = new THREE.Vector3(), _dv = new THREE.Vector3();
+
+    // ------------------------------------------------------------------
+    // Double-bond torsion
+    // ------------------------------------------------------------------
+    // Each double bond between two sp2 ends (no other multiple bond, so allenes are skipped)
+    // gets one dihedral i–a=b–l with a target of 0° (cis) or 180° (trans). In rings of up to
+    // 7 atoms the ring path is forced cis, since a trans double bond cannot close such a ring.
+    // Otherwise the bond keeps whichever arrangement it had when its torsion was first assigned.
+    const MAX_CIS_RING_PATH = 4;  // bonds between the two ring neighbours, i.e. ring size ≤ 7
+
+    function connectedWithin(from, to, maxBonds, blocked) {
+      let frontier = [from];
+      const seen = new Set([from, ...blocked]);
+      for (let d = 0; d <= maxBonds; d++) {
+        if (frontier.includes(to)) return true;
+        const next = [];
+        for (const atom of frontier) for (const n of atom.neighbors()) {
+          if (!seen.has(n)) { seen.add(n); next.push(n); }
+        }
+        frontier = next;
+      }
+      return false;
+    }
+
+    function dihedralAngle(i, j, k, l) {
+      const rij = new THREE.Vector3().subVectors(i.pos, j.pos);
+      const rkj = new THREE.Vector3().subVectors(k.pos, j.pos);
+      const rkl = new THREE.Vector3().subVectors(k.pos, l.pos);
+      const m = new THREE.Vector3().crossVectors(rij, rkj);
+      const n = new THREE.Vector3().crossVectors(rkj, rkl);
+      return m.angleTo(n) * (rij.dot(n) < 0 ? -1 : 1);
+    }
+
+    function assignTorsions() {
+      const sp2 = (atom, skip) => atom.bonds.every(b => b === skip || b.order === 1);
+      const subs = (atom, skip) => atom.bonds.filter(b => b !== skip).map(b => b.other(atom));
+      state.planarBonds = [];
+      for (const bond of state.bonds) {
+        const aSubs = subs(bond.a, bond), bSubs = subs(bond.b, bond);
+        if (bond.order !== 2 || !sp2(bond.a, bond) || !sp2(bond.b, bond) || !aSubs.length || !bSubs.length) {
+          bond.torsion = null;
+          continue;
+        }
+        let t = null;
+        for (const i of aSubs) {
+          const l = bSubs.find(l => connectedWithin(i, l, MAX_CIS_RING_PATH, [bond.a, bond.b]));
+          if (l) { t = { i, l, target: 0, ring: true }; break; }
+        }
+        const old = bond.torsion;
+        if (!t && old && !old.ring && aSubs.includes(old.i) && bSubs.includes(old.l)) t = old;
+        if (!t) {
+          const i = aSubs[0], l = bSubs[0];
+          t = { i, l, target: Math.abs(dihedralAngle(i, bond.a, bond.b, l)) < Math.PI / 2 ? 0 : Math.PI, ring: false };
+        }
+        bond.torsion = t;
+        state.planarBonds.push(bond);
+      }
+    }
+
+    const _rij = new THREE.Vector3(), _rkj = new THREE.Vector3(), _rkl = new THREE.Vector3();
+    const _m = new THREE.Vector3(), _n = new THREE.Vector3(), _fi = new THREE.Vector3(), _fl = new THREE.Vector3(), _sv = new THREE.Vector3();
+
+    // Applies the force of V = k·(1 − cos(φ − φ0)) for the dihedral i–j–k–l (standard
+    // analytic gradient, as used in molecular-dynamics codes).
+    function applyDihedral(i, j, k, l, phi0, kTor) {
+      _rij.subVectors(i.pos, j.pos);
+      _rkj.subVectors(k.pos, j.pos);
+      _rkl.subVectors(k.pos, l.pos);
+      _m.crossVectors(_rij, _rkj);
+      _n.crossVectors(_rkj, _rkl);
+      const m2 = _m.lengthSq(), n2 = _n.lengthSq(), rkj2 = _rkj.lengthSq();
+      if (m2 < 1e-6 || n2 < 1e-6 || rkj2 < 1e-6) return;  // collinear: dihedral undefined
+      const phi = _m.angleTo(_n) * (_rij.dot(_n) < 0 ? -1 : 1);
+      const dV = kTor * Math.sin(phi - phi0);
+      const rkj = Math.sqrt(rkj2);
+      _fi.copy(_m).multiplyScalar(-dV * rkj / m2);
+      _fl.copy(_n).multiplyScalar(dV * rkj / n2);
+      const p = _rij.dot(_rkj) / rkj2, q = _rkl.dot(_rkj) / rkj2;
+      _sv.copy(_fi).multiplyScalar(p).addScaledVector(_fl, -q);
+      i.force.add(_fi);
+      j.force.sub(_fi).add(_sv);
+      k.force.sub(_fl).sub(_sv);
+      l.force.add(_fl);
+    }
 
     function physicsStep(dt) {
       const atoms = state.atoms;
@@ -499,7 +586,14 @@
         }
       }
 
-      // 4. Lone pairs are tethered to their parent atom.
+      // 4. Torsion: double bonds resist twisting, holding their ends planar (cis or trans).
+      //    The other substituents follow because each sp2 centre is already trigonal planar.
+      for (const bond of state.planarBonds) {
+        const t = bond.torsion;
+        applyDihedral(t.i, bond.a, bond.b, t.l, t.target, PHYS.kTorsion);
+      }
+
+      // 5. Lone pairs are tethered to their parent atom.
       for (const a of atoms) {
         for (const lp of a.lonePairs) {
           _d.subVectors(lp.pos, a.pos);
@@ -511,7 +605,7 @@
         }
       }
 
-      // 5. Integrate (semi-implicit Euler with friction and a speed cap).
+      // 6. Integrate (semi-implicit Euler with friction and a speed cap).
       const damp = Math.exp(-PHYS.friction * dt);
       const lpDamp = Math.exp(-PHYS.lonePairFriction * dt);
       const integrate = (p, d) => {
