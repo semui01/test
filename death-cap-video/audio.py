@@ -1,5 +1,6 @@
 """Procedural score + sound design for the death-cap video, synced to out/timing.json."""
-import json, math
+import json, math, os
+from scipy.ndimage import maximum_filter1d
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
@@ -795,11 +796,40 @@ ir[:, :int(0.015 * SR)] = 0
 ir /= np.abs(ir).sum(axis=1, keepdims=True) ** 0.5 * 30
 wet = np.vstack([signal.fftconvolve(send[c], ir[c])[:N] for c in (0, 1)])
 
+# ---- voiceover (from voice.py) and sidechain ducking of the bed under it ----
+vo = None
+if os.path.exists('out/voiceover.wav') and not os.environ.get('NO_VO'):
+    sr_v, v = wavfile.read('out/voiceover.wav')
+    assert sr_v == SR
+    v = v.astype(np.float64) / 32768.0
+    if v.ndim > 1:
+        v = v.mean(axis=1)
+    vo = np.zeros(N)
+    vo[:min(N, len(v))] = v[:N]
+    w = int(0.02 * SR)
+    rms = np.sqrt(np.convolve(vo ** 2, np.ones(w) / w, 'same'))
+    act = (rms > rms.max() * 0.04).astype(np.float64)
+    act = maximum_filter1d(act, int(0.3 * SR))          # hold through short gaps between words
+    sm = np.hanning(int(0.18 * SR)); sm /= sm.sum()
+    act = np.convolve(act, sm, 'same')                   # ramps start slightly before speech
+    music *= 1 - 0.68 * act                              # about -10 dB under the voice
+    sfx *= 1 - 0.42 * act                                # about -5 dB: hits still punch through
+    wet *= 1 - 0.42 * act
+
 mix = music * 1.0 + sfx * 1.0 + wet * 0.9
 mix = hp(mix, 25)
 peak = np.abs(mix).max()
 mix = mix / peak * 1.4
 mix = np.tanh(mix) * 0.89
+if vo is not None:
+    wavfile.write('out/soundtrack_novo.wav', SR, (mix.T * 32767).astype(np.int16))
+    voiced = act > 0.5
+    bed_rms = np.sqrt(np.mean(mix[:, voiced] ** 2))
+    vo_rms = np.sqrt(np.mean(vo[voiced] ** 2))
+    g = 3.0 * bed_rms / vo_rms                           # voice sits ~10 dB over the ducked bed
+    mix = mix + np.vstack([vo, vo]) * g
+    mix /= max(1.0, np.abs(mix).max() / 0.97)
+    print(f'voiceover mixed: gain {g:.2f}, bed rms {bed_rms:.4f}')
 fi = int(0.05 * SR)
 mix[:, :fi] *= np.linspace(0, 1, fi)
 fo = int(0.35 * SR)
