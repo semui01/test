@@ -11,7 +11,8 @@ function buildTimeline() {
     { a: b('s2'), b: b('s3'), s: SceneB },
     { a: b('s3'), b: b('s4b'), s: typeof SceneC !== 'undefined' ? SceneC : null },
     { a: b('s4b'), b: b('s5a'), s: typeof SceneD !== 'undefined' ? SceneD : null },
-    { a: b('s5a'), b: b('s10'), s: typeof SceneE !== 'undefined' ? SceneE : null },
+    { a: b('s5a'), b: b('s9'), s: typeof SceneE !== 'undefined' ? SceneE : null },
+    { a: b('s9'), b: b('s10'), s: typeof SceneI !== 'undefined' ? SceneI : null },
     { a: b('s10'), b: b('s11'), s: typeof SceneF !== 'undefined' ? SceneF : null },
     { a: b('s11'), b: b('s12'), s: typeof SceneG !== 'undefined' ? SceneG : null },
     { a: b('s12'), b: DURATION + 1, s: typeof SceneH !== 'undefined' ? SceneH : null },
@@ -19,11 +20,11 @@ function buildTimeline() {
   CHAPTERS = [
     [0, 'THE STAKES'], [b('s2'), 'THE TRAP'], [b('s3'), 'THE SUSPECT'], [b('s4a'), 'SURFACE PIXELS'],
     [b('s4b'), 'THE PHOTO'], [b('s5a'), 'THE EXPERT CHECK'], [b('s6'), 'BURIED'], [b('s7'), 'LINE OF SIGHT'],
-    [b('s8'), 'BENEATH THE SURFACE'], [b('s10'), 'FLAT DATA'], [b('s11'), 'THE GUESS'], [b('s12'), 'THE VERDICT'],
+    [b('s8'), 'UNDER THE CAP'], [b('s10'), 'FLAT DATA'], [b('s11'), 'THE GUESS'], [b('s12'), 'THE VERDICT'],
   ];
   // global cut transitions (time, kind)
   TRANSITIONS = [
-    [b('s2'), 'glitch'], [b('s3'), 'flash'], [b('s4b'), 'whip'], [b('s5a'), 'whip'], [b('s10'), 'glitch'], [b('s11'), 'whip'], [b('s12'), 'glitch'],
+    [b('s2'), 'glitch'], [b('s3'), 'flash'], [b('s4b'), 'whip'], [b('s5a'), 'whip'], [b('s9'), 'whip'], [b('s10'), 'glitch'], [b('s11'), 'whip'], [b('s12'), 'glitch'],
   ];
 }
 
@@ -205,6 +206,7 @@ async function init() {
   await document.fonts.ready;
   FX.init();
   if (typeof initAssets === 'function') initAssets();
+  if (typeof initAssets4 === 'function') initAssets4();
   if (typeof initAssets3 === 'function') initAssets3();
   buildTimeline();
   buildTints();

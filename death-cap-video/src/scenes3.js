@@ -1,8 +1,8 @@
-// Scene E (s5a..s9): one continuous camera over the death cap.
-// expert check -> volva -> buried -> line of sight -> deeper -> split stem.
+// Scene E (s5a..s8): one continuous camera over the death cap.
+// expert check -> volva -> buried -> line of sight -> deeper -> push in to the gills.
 'use strict';
 
-let SOIL_TEX, STAIN_FIELD, STAIN_CAN, STAIN_W, STAIN_H, LEAVES_FALL, GRASS;
+let SOIL_TEX, LEAVES_FALL, GRASS;
 function initAssets2() {
   // soil texture: world x [-700,700], depth 0..700 below soil top; 2 px per unit
   SOIL_TEX = makeCanvas(2800, 1400);
@@ -47,16 +47,6 @@ function initAssets2() {
     g.stroke();
   }
 
-  // stain noise field for the split stem interior (local face coords: x -60..60, y -470..-140)
-  // 2 px per world unit
-  STAIN_W = 240; STAIN_H = 660;
-  STAIN_FIELD = [new Float32Array(STAIN_W * STAIN_H), new Float32Array(STAIN_W * STAIN_H)];
-  for (let y = 0; y < STAIN_H; y++) for (let x = 0; x < STAIN_W; x++) {
-    const wx = (x - 120) / 2, wy = y / 2;
-    for (let k = 0; k < 2; k++) STAIN_FIELD[k][y * STAIN_W + x] = stainValue(wx, wy, k) ;
-  }
-  STAIN_CAN = [makeCanvas(STAIN_W, STAIN_H), makeCanvas(STAIN_W, STAIN_H)];
-
   // falling leaves (world coords)
   const r2 = mulberry32(55);
   LEAVES_FALL = [];
@@ -74,15 +64,6 @@ function initAssets2() {
     if (Math.abs(x) < 70) continue;
     GRASS.push({ x, h: 40 + r2() * 120, lean: (r2() - 0.5) * 0.6, ph: r2() * TAU, w: 3 + r2() * 4, c: r2() < 0.5 ? '#3f5a2a' : '#56703a' });
   }
-}
-
-// marbled stain field: ridged, domain-warped noise concentrated in the core
-function stainValue(wx, wy, seed) {
-  const qx = fbm2(wx * 0.02 + seed * 5.2, wy * 0.012 + 1.3, 3), qy = fbm2(wx * 0.02 + 8.1, wy * 0.012 + seed * 3.7, 3);
-  const r = 1 - Math.abs(fbm2(wx * 0.045 + qx * 1.6 + seed * 2, wy * 0.016 + qy * 1.6, 4));
-  const spots = fbm2(wx * 0.09 + 30 + seed * 7, wy * 0.05, 3) * 0.5 + 0.5;
-  const core = Math.pow(clamp(1 - Math.abs(wx) / 34), 1.2);
-  return r * 0.62 + spots * 0.2 + core * 0.28 + 0.05 * (wy / 330);
 }
 
 // ---- camera ----
@@ -104,67 +85,6 @@ function w2s(cam, x, y, cx = CAM_CX, cy = CAM_CY) { return [cx + (x - cam.x) * c
 function applyCam(ctx, cam, cx = CAM_CX, cy = CAM_CY) { ctx.translate(cx, cy); ctx.scale(cam.s, cam.s); ctx.translate(-cam.x, -cam.y); }
 
 function soilTopY(x, level) { return level + noise1(x * 0.012 + 3) * 10 + noise1(x * 0.05) * 4; }
-
-function stemHalfW(y) {
-  // approximate half-width profile of stemPath (world y)
-  if (y < -160) return lerp(23, 32, invlerp(-458, -160, y));
-  return lerp(32, 50, invlerp(-160, -40, y));
-}
-
-// interior face of split stem; drawn in local coords centred at x=0
-function drawInteriorFace(ctx, stainP, mirror, yTop, yBot) {
-  ctx.save();
-  if (mirror) ctx.scale(-1, 1);
-  ctx.beginPath();
-  ctx.moveTo(-stemHalfW(yTop) * 0.98, yTop);
-  for (let y = yTop; y <= yBot; y += 10) ctx.lineTo(-stemHalfW(y) * 0.98, y);
-  for (let y = yBot; y >= yTop; y -= 10) ctx.lineTo(stemHalfW(y) * 0.98, y);
-  ctx.closePath();
-  const g = ctx.createLinearGradient(-50, 0, 50, 0);
-  g.addColorStop(0, '#d8cfbb'); g.addColorStop(0.2, '#f6f1e6'); g.addColorStop(0.5, '#efe7d7'); g.addColorStop(0.8, '#f6f1e6'); g.addColorStop(1, '#d1c7b1');
-  ctx.fillStyle = g; ctx.fill();
-  ctx.save(); ctx.clip();
-  // fibres
-  const rng = mulberry32(3);
-  for (let i = 0; i < 26; i++) {
-    const x = (rng() - 0.5) * 70;
-    ctx.strokeStyle = `rgba(170,155,125,${0.18 + rng() * 0.2})`; ctx.lineWidth = 0.6 + rng() * 0.8;
-    ctx.beginPath(); ctx.moveTo(x, yTop);
-    for (let y = yTop; y <= yBot; y += 30) ctx.lineTo(x + noise1(y * 0.02 + i) * 3 + (y - yTop) * x * 0.0006, y);
-    ctx.stroke();
-  }
-  // stains
-  if (stainP > 0) {
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(STAIN_CAN[mirror ? 1 : 0], -60, -470, 120, STAIN_H / 2);
-  }
-  // inner shadow edges
-  const eg = ctx.createLinearGradient(-50, 0, 50, 0);
-  eg.addColorStop(0, 'rgba(60,50,30,0.35)'); eg.addColorStop(0.15, 'rgba(60,50,30,0)'); eg.addColorStop(0.85, 'rgba(60,50,30,0)'); eg.addColorStop(1, 'rgba(60,50,30,0.35)');
-  ctx.fillStyle = eg; ctx.fillRect(-60, yTop, 120, yBot - yTop);
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(150,140,110,0.9)'; ctx.lineWidth = 1.6; ctx.stroke();
-  ctx.restore();
-}
-
-function updateStains(p) {
-  const th = lerp(1.08, 0.80, p);
-  for (let f = 0; f < 2; f++) {
-    const g = STAIN_CAN[f].getContext('2d');
-    const img = g.createImageData(STAIN_W, STAIN_H);
-    const d = img.data, F = STAIN_FIELD[f];
-    for (let i = 0; i < F.length; i++) {
-      const n = F[i];
-      const core = clamp((n - th) / 0.035);
-      const halo = clamp((n - th + 0.05) / 0.05) * (1 - core);
-      const k = i * 4;
-      if (core > 0) { d[k] = 38; d[k + 1] = 14; d[k + 2] = 28; d[k + 3] = Math.round(225 * core + 70 * halo); }
-      else if (halo > 0) { d[k] = 110; d[k + 1] = 64; d[k + 2] = 62; d[k + 3] = Math.round(80 * halo); }
-      else d[k + 3] = 0;
-    }
-    g.putImageData(img, 0, 0);
-  }
-}
 
 // magnifying glass in screen space; lens shows magnified world
 function drawMagnifier(ctx, sx, sy, r, cam, t, drawWorldFn, a = 1) {
@@ -230,14 +150,13 @@ const SceneE = {
     const tFallen = T('s6', 'fallen'), tLeaves = T('s6', 'leaves');
     const t7 = b('s7'), tLine = T('s7', 'line'), tSight = T('s7', 'sight'), tVis = T('s7', 'visual'), tData = T('s7', 'data'), tExist = T('s7', 'exist');
     const t8 = b('s8'), tDeeper = T('s8', 'deeper'), tDirt = T('s8', 'dirt');
-    const t9 = b('s9'), tSplit = T('s9', 'splitting'), tOpen = T('s9', 'open'), tDark = T('s9', 'dark'), tChem = T('s9', 'chemical'), tPoison = T('s9', 'poison');
-    const end = b('s10');
+    const end = b('s9');
 
     const cam = camTrack(t, [
       [t5, 0, -290, 1.5], [t5 + 0.7, 0, -295, 1.3, E.outCubic], [t5b - 0.2, 0, -305, 1.27],
       [tSack - 0.3, 0, -110, 2.15], [t6, 0, -100, 2.25, E.linear], [t6 + 1.2, 0, -270, 1.3],
       [t7, 0, -262, 1.34, E.linear], [t7 + 1.0, -170, -330, 0.94], [t8, -165, -325, 0.95, E.linear],
-      [tDirt + 0.35, 0, -305, 3.2], [end, 0, -300, 3.35, E.linear],
+      [tDirt, 0, -340, 1.25], [end, 0, -452, 2.4, E.inCubic],
     ]);
 
     // ---- world state ----
@@ -246,10 +165,7 @@ const SceneE = {
     const level = lerp(260, -150, K(t, tComp - 0.25, 1.35, E.inOutCubic));
     const soilOn = t > tComp - 0.3;
     const ghost = win(t, tBur + 0.4, tVis + 0.6, 0.4, 0.5);
-    const splitCut = K(t, tSplit, 0.4, E.inOutCubic);
-    const open = K(t, tOpen - 0.05, 0.7, E.inOutCubic);
-    const stainP = K(t, tDark - 0.35, 1.7, E.inOutQuad);
-    if (stainP > 0) updateStains(stainP);
+    const gillGlow = win(t, tDirt - 0.1, end + 0.5, 0.3, 0.1) * (0.7 + 0.3 * Math.sin(t * 8));
     const leafT0 = tFallen - 0.9;
 
     const drawWorld = (c) => {
@@ -268,44 +184,7 @@ const SceneE = {
         // back leaves on the soil
         for (const L of LEAVES_FALL) if (!L.front) drawFallingLeaf(c, L, t, leafT0, level);
       }
-      // mushroom (possibly split)
-      if (open <= 0.001) {
-        drawDeathCap(c, { capGlow, volvaGlow, capColor: C.ai, volvaColor: C.amber });
-      } else {
-        // cap + gills stay; stem region splits into two interior faces
-        c.save();
-        c.beginPath(); c.rect(-400, -900, 800, 900 - 470 + 12); c.clip();
-        drawDeathCap(c, {});
-        c.restore();
-        const yTop = -452, yBot = level + 6;
-        const gap = 36 * open;
-        // skin halves fading
-        for (const s of [-1, 1]) {
-          c.save();
-          c.beginPath(); c.rect(s < 0 ? -200 : 0, -460, 200, 470); c.clip();
-          c.translate(s * gap * 0.6, 0);
-          c.globalAlpha = 1 - open;
-          drawDeathCap(c, { noShadow: true });
-          c.restore();
-          c.save();
-          const cx = s * (stemHalfW(-300) + 4) * open;
-          c.translate(cx + s * gap * 0.25, 0);
-          c.scale(Math.max(0.001, open), 1);
-          c.globalAlpha = clamp(open * 1.5);
-          drawInteriorFace(c, stainP, s > 0, yTop, yBot);
-          c.restore();
-        }
-      }
-      // blade line
-      if (splitCut > 0 && open < 1) {
-        const y0 = -458, y1 = lerp(-458, level, splitCut);
-        c.save();
-        c.globalAlpha = 1 - open;
-        c.strokeStyle = '#ffffff'; c.lineWidth = 2.2; c.shadowColor = '#ffffff'; c.shadowBlur = 14;
-        c.beginPath(); c.moveTo(0, y0); c.lineTo(0, y1); c.stroke();
-        if (splitCut < 1) { c.fillStyle = '#ffffff'; c.beginPath(); c.arc(0, y1, 5, 0, TAU); c.fill(); }
-        c.restore();
-      }
+      drawDeathCap(c, { capGlow, volvaGlow, gillGlow, capColor: C.ai, volvaColor: C.amber });
       // soil
       if (soilOn) {
         c.save();
@@ -507,7 +386,7 @@ const SceneE = {
     }
 
     // s8: deeper than the dirt
-    const s8 = win(t, tDeeper - 0.2, tSplit + 0.2, 0.35, 0.35);
+    const s8 = win(t, tDeeper - 0.2, end, 0.35, 0.3);
     if (s8 > 0) {
       ctx.save();
       ctx.globalAlpha = s8;
@@ -528,38 +407,6 @@ const SceneE = {
         ctx.restore();
       });
       ctx.restore();
-    }
-    // depth ruler (s8-s9)
-    const ruler = K(t, t8, 0.5) * (1 - K(t, end - 0.3, 0.3));
-    if (ruler > 0) {
-      ctx.save(); ctx.globalAlpha = ruler * 0.85;
-      const x = 1010;
-      ctx.strokeStyle = rgba(C.ink, 0.5); ctx.fillStyle = rgba(C.ink, 0.7);
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x, 300); ctx.lineTo(x, 1380); ctx.stroke();
-      setFont(ctx, 600, 18, 'JetBrains Mono', 1); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      const off = ((t - t8) * 160) % 40;
-      for (let y = 300 - off; y < 1380; y += 40) {
-        if (y < 300) continue;
-        const idx = Math.round((y + (t - t8) * 160) / 40);
-        const major = idx % 5 === 0;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - (major ? 24 : 12), y); ctx.stroke();
-        if (major) ctx.fillText((idx * 2) + 'mm', x - 30, y);
-      }
-      ctx.restore();
-    }
-    // s9 callouts
-    if (t > tOpen) {
-      const [ax, ay] = w2s(cam, -48, -260), [bx, by] = w2s(cam, 50, -330);
-      const c1 = K(t, tDark, 0.8, E.linear) * (1 - K(t, end - 0.3, 0.3));
-      callout(ctx, ax, ay, 300, ay - 200, 'DARK STAINS', C.red, c1, { fs: 28, textCol: '#fff', t });
-      const c2 = K(t, tChem - 0.05, 0.8, E.linear) * (1 - K(t, end - 0.3, 0.3));
-      callout(ctx, bx, by, 780, by + 260, 'CHEMICAL SIGN', C.red, c2, { fs: 28, textCol: '#fff', t });
-      const pp = K(t, tPoison - 0.05, 0.35, E.linear) * (1 - K(t, end - 0.3, 0.3));
-      if (pp > 0) {
-        drawStamp(ctx, 540, 1330, 'POISON', C.red, pp, { fs: 120, rot: -0.05 });
-        if (t < tPoison + 0.25) FXREQ.shake = Math.max(FXREQ.shake, 14 * (1 - (t - tPoison) / 0.25));
-      }
     }
   },
 };

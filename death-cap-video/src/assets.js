@@ -199,6 +199,7 @@ function drawDeathCap(ctx, o = {}) {
   // glows / highlights
   if (o.volvaGlow > 0) glowOutline(ctx, volvaFrontPath, o.volvaColor || C.amber, o.volvaGlow);
   if (o.ringGlow > 0) glowOutline(ctx, ringPath, o.ringColor || C.amber, o.ringGlow);
+  if (o.gillGlow > 0) glowOutline(ctx, gillPath, o.gillColor || C.amber, o.gillGlow);
   if (o.capGlow > 0) glowOutline(ctx, capPath, o.capColor || C.ai, o.capGlow);
   if (o.ghostVolva > 0) {
     ctx.save();

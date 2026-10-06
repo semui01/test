@@ -70,7 +70,6 @@ const C = {
   cap1: '#d3d39a', cap2: '#9aa35d', cap3: '#626b38', cap4: '#3c4322',
   flesh: '#f1ece0', flesh2: '#d9d1bf', flesh3: '#b6ac96',
   soil1: '#2b1e15', soil2: '#3d2b1d', soil3: '#55402b', soil4: '#1a120c',
-  stain: '#3a1d2c', stain2: '#1d0d16',
 };
 
 // ---------- timing engine ----------
@@ -86,10 +85,10 @@ const SCRIPT = [
   { id: 's6', text: 'But out in the wild, | this crucial root | is completely [r:buried] | under soil and fallen leaves.' },
   { id: 's7', text: "Because it's blocked | from the camera's line of sight — | that's [c:visual occlusion] — | the data [r:doesn't exist]." },
   { id: 's8', text: 'And this limitation | goes [a:deeper than the dirt].' },
-  { id: 's9', text: 'Splitting the stem open | reveals hidden [r:dark stains], | a chemical indicator | of [r:poison].' },
-  { id: 's10', text: 'A 2D surface image | can [r:never] capture | that internal texture.' },
+  { id: 's9', text: 'Flipping the cap | reveals pure [a:white gills], | which drop a [a:white spore print], | a classic [r:warning sign].' },
+  { id: 's10', text: "A 2D surface image | can [r:never] capture | what's underneath." },
   { id: 's11', text: "Because [c:AI] can't infer | features it can't see, | it makes [r:life-or-death guesses] | using deceptive camouflage." },
-  { id: 's12', text: 'And that deadly death cap, | missing the buried root | and toxic stains, | the AI confidently labels | the lethal hazard: | [g:safe to eat].' },
+  { id: 's12', text: 'And that deadly death cap, | missing the buried root | and hidden white gills, | the AI confidently labels | the lethal hazard: | [g:safe to eat].' },
 ];
 
 function syllables(w) {

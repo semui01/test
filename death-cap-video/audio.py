@@ -494,7 +494,7 @@ def build_music():
     sub_drone(s8, s10, D2 - 12, 0.22)
     pad_chord(s8 + 3.0, s8 + 5.4, [39, 51, 58], gain=0.11, cutoff=600)
     pad_chord(s8 + 5.2, s10, [38, 50, 57, 65], gain=0.11, cutoff=700)
-    pluck_bass(T('s9', 'open') - 0.05, s10 - 0.1, [(0, D2)], step=0.3, gain=0.10, cut=700)
+    pluck_bass(T('s9', 'reveals') - 0.05, s10 - 0.1, [(0, D2)], step=0.3, gain=0.10, cut=700)
     # --- s10 / s11
     s11, s12 = b('s11'), b('s12')
     pad_chord(s10, s11, [46, 53, 58, 62], gain=0.10, cutoff=1100)
@@ -645,25 +645,38 @@ def build_sfx():
     place(sfx, s8 - 0.1, dive(2.8), 0.6, rev=0.2)
     for w in ['deeper', 'than', 'dirt']:
         place(sfx, T('s8', w) - 0.05, impact(1.0, 120 if w != 'dirt' else 80, 40, 0.6), 0.3 if w != 'dirt' else 0.5, rev=0.2)
-    rt = s8
-    while rt < b('s10') - 0.3:
-        place(sfx, rt, tick(), 0.06, pan=0.8)
-        rt += 0.25
-    # s9 split
-    place(sfx, T('s9', 'splitting'), shing(1.6), 0.4, rev=0.4)
-    place(sfx, T('s9', 'open') - 0.05, tear(0.7), 0.6)
-    place(sfx, T('s9', 'open') - 0.05, whoosh(0.7, 100, 1200, 0.5), 0.25)
-    tDark = T('s9', 'dark')
-    d = 2.0
-    t = tt(d)
-    bloom = lp(noise(d), 300) * (t / d) ** 2 * np.exp(-np.maximum(0, t - d * 0.8) / 0.2)
-    place(sfx, tDark - 0.35, bloom, 0.5, rev=0.3)
-    place(sfx, tDark - 0.3, braam(2.4, 31), 0.25, rev=0.4)
-    place(sfx, tDark, lock(), 0.15, pan=-0.5)
-    place(sfx, T('s9', 'chemical') - 0.05, lock(), 0.15, pan=0.5)
-    tPo = T('s9', 'poison')
-    place(sfx, tPo - 0.05, stamp(), 0.55, rev=0.2)
-    place(sfx, tPo - 0.05, impact(1.6, 100, 35, 0.9), 0.45, rev=0.3)
+    # s9 flip the cap -> white gills -> spore print -> warning
+    s9 = b('s9')
+    place(sfx, s9 - 0.15, whoosh(0.5, 400, 6000, 0.6), 0.3)
+    tFlip = T('s9', 'flipping')
+    place(sfx, tFlip, whoosh(0.75, 300, 5000, 0.5), 0.4, pan=-0.3)
+    place(sfx, tFlip + 0.1, rustle(0.5), 0.5)
+    tWh = T('s9', 'white')
+    place(sfx, tWh - 0.1, bell([1318.5, 1975.5, 2637], 1.8), 0.24, rev=0.4)
+    place(sfx, tWh - 0.1, whoosh(0.9, 3000, 11000, 0.5), 0.1, pan=0.4)
+    place(sfx, tWh, lock(), 0.16, pan=0.5)
+    tWhich, tDrop = T('s9', 'which'), T('s9', 'drop')
+    place(sfx, tWhich - 0.3, whoosh(0.55, 100, 1500, 0.4), 0.35)
+    place(sfx, tWhich - 0.12, whoosh(0.5, 300, 4000, 0.5), 0.3, pan=0.3)
+    place(sfx, tDrop, impact(0.7, 130, 60, 0.4), 0.35)
+    place(sfx, tDrop, bp(noise(0.08), 300, 3000) * np.exp(-tt(0.08) / 0.015), 0.4)
+    tlStart, tlEnd = tDrop + 0.12, T('s9', 'spore') - 0.15
+    # time-lapse: a clock racing forward while spores fall
+    tc, step = tlStart, 0.12
+    while tc < tlEnd:
+        place(sfx, tc, tick() * 2.5, 0.12, pan=0.6)
+        tc += step
+        step = max(0.04, step * 0.85)
+    for k in range(40):
+        place(sfx, tlStart + rng.random() * (tlEnd - tlStart + 0.3), blip(4000 + rng.random() * 3000, 0.03), 0.04, pan=rng.uniform(-0.8, 0.8), rev=0.4)
+    place(sfx, tlEnd, whoosh(0.7, 200, 6000, 0.7), 0.35)
+    tPr = T('s9', 'print')
+    place(sfx, tPr - 0.1, bell([1046.5, 1568, 2093], 1.8), 0.22, rev=0.4)
+    place(sfx, tPr - 0.05, lock(), 0.16, pan=-0.4)
+    tWarn = T('s9', 'warning')
+    place(sfx, tWarn - 0.05, stamp(), 0.55, rev=0.2)
+    place(sfx, tWarn - 0.05, impact(1.6, 100, 35, 0.9), 0.45, rev=0.3)
+    place(sfx, tWarn + 0.1, alert(2, 880), 0.14)
     # s10 layers
     s10 = b('s10')
     place(sfx, s10 - 0.1, glitch(0.3, 6), 0.35)
@@ -676,7 +689,7 @@ def build_sfx():
     tNe = T('s10', 'never')
     place(sfx, tNe - 0.05, err_buzz(0.25, 120), 0.18)
     place(sfx, tNe + 0.15, err_buzz(0.25, 110), 0.18)
-    place(sfx, T('s10', 'internal'), alert(2, 740), 0.12)
+    place(sfx, T('s10', 'underneath'), alert(2, 740), 0.12)
     # s11 guess
     s11 = b('s11')
     place(sfx, s11 - 0.15, whoosh(0.6, 300, 5000, 0.6), 0.3)
@@ -716,7 +729,7 @@ def build_sfx():
     place(sfx, s12 + 0.7, blip(1900, 0.06), 0.15)
     place(sfx, T('s12', 'missing'), lock(), 0.15)
     place(sfx, T('s12', 'buried') - 0.1, err_buzz(0.3, 130), 0.18)
-    place(sfx, T('s12', 'toxic') - 0.1, err_buzz(0.3, 120), 0.18)
+    place(sfx, T('s12', 'hidden') - 0.1, err_buzz(0.3, 120), 0.18)
     tConf = T('s12', 'confidently')
     place(sfx, tConf - 0.1, fill_sweep(1.2, 300, 2400), 0.14)
     tLe, tSafe = T('s12', 'lethal'), T('s12', 'safe')
@@ -767,7 +780,7 @@ def duck_at(t0, depth=0.35, att=0.02, rel=0.8, pre=0.0):
 
 tFatal = T('s1', 'fatal')
 duck_at(tFatal - 0.35, 0.0, 0.05, 0.4, 0)
-for tt_ in [T('s2', 'occlusion'), T('s7', 'visual'), T('s9', 'poison'), T('s8', 'dirt')]:
+for tt_ in [T('s2', 'occlusion'), T('s7', 'visual'), T('s9', 'warning'), T('s8', 'dirt')]:
     duck_at(tt_, 0.4)
 tSafe = T('s12', 'safe')
 i0, i1 = int((tSafe - 0.3) * SR), int((tSafe - 0.02) * SR)

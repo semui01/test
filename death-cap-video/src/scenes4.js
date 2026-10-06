@@ -9,30 +9,10 @@ function initAssets3() {
   const l1 = mk(), g1 = l1.getContext('2d');
   g1.drawImage(FLOOR_TOP, (FLOOR_TOP.width - S) / 2, (FLOOR_TOP.height - S) / 2 - 40, S, S, 0, 0, S, S);
   drawCapTop(g1, S / 2, S / 2, 150, {});
-  // L2: internal texture — cut flesh swatch with dark stains
+  // L2: the underside of the cap (white gills), never visible from above
   const l2 = mk(), g2 = l2.getContext('2d');
-  const fg = g2.createLinearGradient(0, 0, S, S);
-  fg.addColorStop(0, '#f4eee2'); fg.addColorStop(1, '#ddd2bd');
-  g2.fillStyle = fg; g2.fillRect(0, 0, S, S);
-  const rf = mulberry32(8);
-  for (let i = 0; i < 90; i++) {
-    const x = rf() * S;
-    g2.strokeStyle = `rgba(160,140,110,${0.12 + rf() * 0.18})`; g2.lineWidth = 0.8 + rf() * 1.5;
-    g2.beginPath(); g2.moveTo(x, 0);
-    for (let y = 0; y <= S; y += 26) g2.lineTo(x + noise1(y * 0.02 + i * 3) * 6, y);
-    g2.stroke();
-  }
-  const N = 260, sc = makeCanvas(N, N), sg = sc.getContext('2d'), im = sg.createImageData(N, N);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const n = stainValue((x - N / 2) * 0.5, y * 1.2, 3);
-    const core = clamp((n - 0.84) / 0.035), halo = clamp((n - 0.79) / 0.05) * (1 - core);
-    const k = (y * N + x) * 4;
-    if (core > 0) { im.data[k] = 38; im.data[k + 1] = 14; im.data[k + 2] = 28; im.data[k + 3] = 230 * core + 70 * halo; }
-    else { im.data[k] = 110; im.data[k + 1] = 64; im.data[k + 2] = 62; im.data[k + 3] = 90 * halo; }
-  }
-  sg.putImageData(im, 0, 0);
-  g2.imageSmoothingEnabled = true;
-  g2.drawImage(sc, 0, 0, S, S);
+  g2.fillStyle = '#16120f'; g2.fillRect(0, 0, S, S);
+  g2.save(); g2.translate(S / 2, S / 2); drawUnderside(g2, 225, {}); g2.restore();
   // L3: buried base (soil + volva)
   const l3 = mk(), g3 = l3.getContext('2d');
   g3.drawImage(SOIL_TEX, 600, 100, 1040, 1040, 0, 0, S, S);
@@ -80,7 +60,7 @@ function isoLayer(ctx, img, cx, cy, k, o = {}) {
 const SceneF = {
   draw(ctx, t) {
     const t0 = T('s10') - 0.12, t2d = T('s10', '2d'), tSurf = T('s10', 'surface'), tNever = T('s10', 'never');
-    const tCap = T('s10', 'capture'), tInt = T('s10', 'internal'), tTex = T('s10', 'texture');
+    const tCap = T('s10', 'capture'), tInt = T('s10', 'underneath');
     const end = T('s11') - 0.12;
     const out = K(t, end - 0.3, 0.3, E.inCubic);
     const inP = K(t, t0, 0.6, E.outExpo);
@@ -135,7 +115,7 @@ const SceneF = {
       ctx.restore();
     };
     lab(ys[0] + hh * 0.2, '2D SURFACE IMAGE', 'captured ✓', C.ai, K(t, t2d, 0.5, E.linear));
-    lab(ys[1] + hh * 0.2, 'INTERNAL TEXTURE', 'never captured', C.red, K(t, tCap - 0.1, 0.5, E.linear) * clamp(expl * 2));
+    lab(ys[1] + hh * 0.2, 'GILLS UNDER THE CAP', 'never captured', C.red, K(t, tCap - 0.1, 0.5, E.linear) * clamp(expl * 2));
     lab(ys[2] + hh * 0.2, 'BURIED BASE', 'never captured', C.red, K(t, tCap + 0.2, 0.5, E.linear) * clamp(expl * 2));
     // big "2D"
     const p2 = K(t, t2d - 0.05, 0.4, E.outExpo) * (1 - K(t, tSurf + 0.4, 0.4));
@@ -161,7 +141,7 @@ const NET = (() => {
   const nodes = rows.map(r => Array.from({ length: r.n }, (_, i) => ({ x: lerp(150, 930, r.n === 1 ? 0.5 : i / (r.n - 1)), y: r.y })));
   return { rows, nodes };
 })();
-const INPUTS = [['CAP', 'SHAPE', true], ['CAP', 'COLOR', true], ['GILLS', '', false], ['VOLVA', '', false], ['STAINS', '', false]];
+const INPUTS = [['CAP', 'SHAPE', true], ['CAP', 'COLOR', true], ['GILLS', '', false], ['VOLVA', '', false], ['SPORE', 'PRINT', false]];
 
 function ecg(ctx, x0, x1, y, t, amp, col, speed = 1) {
   ctx.save();
@@ -346,7 +326,7 @@ const SceneG = {
 const SceneH = {
   draw(ctx, t, frame) {
     const t0 = T('s12') - 0.12, tDeadly = T('s12', 'deadly'), tMiss = T('s12', 'missing'), tBur = T('s12', 'buried');
-    const tTox = T('s12', 'toxic'), tAI = T('s12', 'ai'), tConf = T('s12', 'confidently'), tLabels = T('s12', 'labels');
+    const tGill = T('s12', 'hidden'), tAI = T('s12', 'ai'), tConf = T('s12', 'confidently'), tLabels = T('s12', 'labels');
     const tLethal = T('s12', 'lethal'), tHaz = T('s12', 'hazard'), tSafe = T('s12', 'safe');
     const inP = K(t, t0, 0.8, E.outExpo);
     const PX = 540, PY = 835 + (1 - inP) * 1300, PW = 560, PH = 1140;
@@ -357,18 +337,13 @@ const SceneH = {
     ctx.globalAlpha = 1 - phoneDim * 0.55;
     drawPhone(ctx, PX, PY, PW, PH, (c, x, y, w, h) => {
       if (xray > 0.5) {
-        updateStains(1);
         // truth: red x-ray of the full mushroom
         c.fillStyle = '#16020a'; c.fillRect(x, y, w, h);
         c.save(); c.translate(x + w / 2, y + h * 0.74); c.scale(0.74, 0.74);
         drawDeathCap(c, { silhouette: 'rgba(255,45,66,0.18)', noShadow: true });
         c.lineWidth = 3; c.strokeStyle = C.red; c.shadowColor = C.red; c.shadowBlur = 20;
-        capPath(c); c.stroke(); stemPath(c); c.stroke(); ringPath(c); c.stroke();
+        capPath(c); c.stroke(); stemPath(c); c.stroke(); ringPath(c); c.stroke(); gillPath(c); c.stroke();
         c.lineWidth = 6; volvaFrontPath(c); c.stroke();
-        c.restore();
-        // stains hint
-        c.save(); c.globalAlpha = 0.8;
-        c.drawImage(STAIN_CAN[0], x + w / 2 - 44 * 0.74, y + h * 0.74 - 470 * 0.74, 88 * 0.74, 330 * 0.74);
         c.restore();
         drawSkull(c, x + w / 2, y + h * 0.15, 90, C.red);
         setFont(c, 400, 70, 'Anton', 4); c.fillStyle = C.red; c.textBaseline = 'middle';
@@ -390,7 +365,7 @@ const SceneH = {
         }
         featureList(c, x + 60, y + h * 0.6, [
           ['CAP SHAPE', 'ok', t0 + 0.5], ['CAP COLOR', 'ok', t0 + 0.7],
-          ['BURIED ROOT', 'NOT SEEN', tBur - 0.1], ['TOXIC STAINS', 'NOT SEEN', tTox - 0.1],
+          ['BURIED ROOT', 'NOT SEEN', tBur - 0.1], ['WHITE GILLS', 'NOT SEEN', tGill - 0.1],
         ], t, C.safe);
         // confidence bar at the top of screen
         drawConfBar(c, x + 50, y + h * 0.2, w - 100, 0.97, K(t, tConf - 0.1, 1.2, E.linear), C.safe);
